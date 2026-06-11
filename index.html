@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Fiche de visite — Diagnostic logement</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+:root{
+  --bleu:#1B3A5C; --bleu-fonce:#122941;
+  --papier:#F6F5F0; --carte:#FFF; --encre:#1E2530;
+  --gris:#6B7280; --ligne:#DDD9CE;
+  --vert:#2F8F4E; --jaune:#D98E04; --orange:#E8590C; --rouge:#C2261A;
+  --r:10px;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{font-family:'Archivo','Segoe UI',system-ui,sans-serif;background:var(--papier);color:var(--encre);font-size:15px;line-height:1.45;padding-bottom:90px}
+button{font-family:inherit;cursor:pointer;border:none;background:none;font-size:inherit}
+input,select,textarea{font-family:inherit;font-size:16px;border:1px solid var(--ligne);border-radius:8px;padding:9px 12px;background:#fff;width:100%;color:var(--encre)}
+input:focus,textarea:focus{outline:2px solid var(--bleu);outline-offset:1px;border-color:var(--bleu)}
+textarea{resize:vertical;min-height:58px}
+
+.topbar{background:var(--bleu);color:#fff;padding:13px 16px;position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:10px;box-shadow:0 2px 8px rgba(18,41,65,.25)}
+.topbar .back{color:#fff;font-size:24px;line-height:1;padding:2px 8px 2px 0;display:none}
+.topbar .titre{flex:1;min-width:0}
+.topbar .titre h1{font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topbar .titre small{font-size:10.5px;opacity:.75;text-transform:uppercase;letter-spacing:.08em;display:block}
+.topbar .action{color:#fff;font-size:13px;font-weight:700;border:1px solid rgba(255,255,255,.4);border-radius:7px;padding:7px 11px}
+
+main{padding:14px;max-width:760px;margin:0 auto}
+.ecran{display:none}
+.ecran.actif{display:block;animation:app .18s ease}
+@keyframes app{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* Liste des visites */
+.visite-card{background:var(--carte);border:1px solid var(--ligne);border-left:5px solid var(--bleu);border-radius:var(--r);padding:13px 14px;margin-bottom:11px;display:block;width:100%;text-align:left;box-shadow:0 1px 3px rgba(30,37,48,.06)}
+.visite-card:active{transform:scale(.99)}
+.visite-card .adr{font-weight:700;font-size:15px}
+.visite-card .meta{font-size:12.5px;color:var(--gris);display:flex;flex-wrap:wrap;gap:3px 12px;margin-top:2px}
+.visite-card .jauge{height:5px;background:#ECEAE2;border-radius:99px;margin-top:9px;overflow:hidden}
+.visite-card .jauge i{display:block;height:100%;background:var(--vert);border-radius:99px}
+.visite-card .pct{font-size:11px;color:var(--gris);margin-top:3px}
+.vide{text-align:center;padding:48px 20px;color:var(--gris)}
+.vide .pic{font-size:42px;margin-bottom:10px}
+
+/* Sommaire des rubriques */
+.rub-card{background:var(--carte);border:1px solid var(--ligne);border-radius:var(--r);padding:13px 14px;margin-bottom:9px;display:flex;align-items:center;gap:12px;width:100%;text-align:left}
+.rub-card:active{background:#FAF9F5}
+.rub-card .num{width:30px;height:30px;border-radius:7px;background:var(--bleu);color:#fff;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.rub-card .lbl{flex:1;font-weight:700;font-size:14px}
+.rub-card .etat{font-size:11.5px;color:var(--gris)}
+.rub-card.fait .num{background:var(--vert)}
+.rub-card .fleche{color:var(--gris);font-size:18px}
+
+/* Rubrique ouverte */
+.champ-bloc{background:var(--carte);border:1px solid var(--ligne);border-radius:var(--r);padding:13px 14px;margin-bottom:9px}
+.champ-bloc .q{font-weight:700;font-size:13.5px;margin-bottom:8px}
+.champ-bloc .q small{display:block;font-weight:500;color:var(--gris);font-size:11.5px}
+.sous-titre{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--bleu);margin:18px 2px 9px;display:flex;align-items:center;gap:8px}
+.sous-titre::after{content:"";flex:1;height:1px;background:var(--ligne)}
+
+.puces{display:flex;flex-wrap:wrap;gap:7px}
+.puce{border:1.5px solid var(--ligne);border-radius:99px;padding:8px 14px;font-size:13.5px;font-weight:600;background:#fff;color:var(--encre);min-height:38px}
+.puce.sel{background:var(--bleu);border-color:var(--bleu);color:#fff}
+.puce.sel.bon{background:var(--vert);border-color:var(--vert)}
+.puce.sel.moyen{background:var(--jaune);border-color:var(--jaune)}
+.puce.sel.mauvais{background:var(--orange);border-color:var(--orange)}
+.puce.sel.urgent{background:var(--rouge);border-color:var(--rouge)}
+
+.nav-rub{display:flex;gap:10px;margin:16px 0}
+.nav-rub .btn{flex:1}
+
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;font-weight:700;border-radius:9px;padding:13px 16px;width:100%;font-size:15px}
+.btn.principal{background:var(--bleu);color:#fff}
+.btn.principal:active{background:var(--bleu-fonce)}
+.btn.secondaire{background:#fff;color:var(--bleu);border:1.5px solid var(--bleu)}
+.btn.danger{background:#fff;color:var(--rouge);border:1.5px solid var(--rouge)}
+.btn.petit{width:auto;padding:8px 14px;font-size:13px}
+.rangée-btn{display:flex;gap:10px;margin:14px 0}
+.rangée-btn .btn{flex:1}
+.fab{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);width:auto;min-width:230px;box-shadow:0 6px 18px rgba(18,41,65,.35);z-index:40;border-radius:99px}
+
+.mini-photos{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.mini-photos .ph{position:relative}
+.mini-photos img{width:62px;height:62px;object-fit:cover;border-radius:6px;border:1px solid var(--ligne)}
+.mini-photos .x{position:absolute;top:-6px;right:-6px;background:var(--rouge);color:#fff;border-radius:50%;width:20px;height:20px;font-size:12px;line-height:20px;text-align:center}
+
+.toast{position:fixed;bottom:96px;left:50%;transform:translateX(-50%);background:var(--encre);color:#fff;padding:10px 18px;border-radius:99px;font-size:13.5px;font-weight:600;z-index:99;opacity:0;pointer-events:none;transition:opacity .25s;max-width:90vw;text-align:center}
+.toast.visible{opacity:1}
+.note-sync{font-size:11.5px;color:var(--gris);text-align:center;margin-top:8px}
+
+/* Rapport imprimable */
+#rapport{display:none}
+@media print{
+  body{background:#fff;padding:0;font-size:11.5px}
+  body>*{display:none!important}
+  #rapport{display:block!important}
+  #rapport .rp-tete{border-bottom:3px solid var(--bleu);padding-bottom:8px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:flex-end}
+  #rapport h1{font-size:18px;color:var(--bleu)}
+  #rapport .rp-rub{margin-bottom:12px;break-inside:avoid}
+  #rapport .rp-rub h3{background:var(--bleu);color:#fff;padding:4px 9px;font-size:12.5px;border-radius:4px;margin-bottom:5px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  #rapport table{width:100%;border-collapse:collapse;font-size:11px}
+  #rapport td{border:1px solid #BBB;padding:4px 7px;vertical-align:top}
+  #rapport td.lib{width:42%;color:#444}
+  #rapport td.val{font-weight:700}
+  #rapport .neg{color:var(--rouge)}
+  #rapport .rp-photos img{width:118px;height:88px;object-fit:cover;margin:3px 4px 0 0;border:1px solid #999}
+  #rapport .rp-note{border-left:3px solid var(--bleu);padding:3px 8px;margin-top:5px;font-style:italic;color:#333}
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <button class="back" id="btnRetour" onclick="retour()">‹</button>
+  <div class="titre">
+    <small>Cochet Dehaene · Diagnostic</small>
+    <h1 id="topTitre">Fiches de visite</h1>
+  </div>
+  <button class="action" id="btnRapport" style="display:none" onclick="genererRapport()">Rapport</button>
+</div>
+
+<main>
+  <section class="ecran actif" id="ecranListe">
+    <div id="listeVisites"></div>
+    <div class="vide" id="videListe" style="display:none">
+      <div class="pic">🏠</div>
+      <p><strong>Aucune visite enregistrée.</strong><br>Créez une fiche pour commencer.</p>
+    </div>
+    <div class="rangée-btn" id="outilsListe" style="display:none">
+      <button class="btn principal petit" onclick="exporterToutExcel()">📊 Excel (toutes)</button>
+      <button class="btn secondaire petit" onclick="exporterTout()">JSON (toutes)</button>
+    </div>
+    <div class="rangée-btn" style="margin-top:0">
+      <button class="btn secondaire petit" onclick="chargerIndex();toast('Liste actualisée')">🔄 Actualiser</button>
+      <span id="statutSync" style="font-size:12px;font-weight:700;align-self:center"></span>
+    </div>
+    <p class="note-sync">👥 Fiches partagées — toute l'équipe voit et modifie les mêmes fiches.</p>
+  </section>
+
+  <section class="ecran" id="ecranSommaire">
+    <div id="sommaire"></div>
+    <div class="rangée-btn">
+      <button class="btn principal" onclick="exporterExcelVisite()">📊 Exporter Excel</button>
+    </div>
+    <div class="rangée-btn">
+      <button class="btn secondaire" onclick="exporterVisite()">Exporter JSON</button>
+      <button class="btn danger" onclick="supprimerVisite()">Supprimer</button>
+    </div>
+  </section>
+
+  <section class="ecran" id="ecranRubrique">
+    <div id="contenuRubrique"></div>
+    <div class="nav-rub">
+      <button class="btn secondaire" id="btnPrec" onclick="naviguerRub(-1)">‹ Précédent</button>
+      <button class="btn principal" id="btnSuiv" onclick="naviguerRub(1)">Suivant ›</button>
+    </div>
+  </section>
+</main>
+
+<button class="btn principal fab" id="fabNouvelle" onclick="nouvelleVisite()">＋ Nouvelle visite</button>
+<div class="toast" id="toast"></div>
+<input type="file" accept="image/*" capture="environment" id="inputPhoto" style="display:none">
+<div id="rapport"></div>
+
+<script>
+/* ============================================================
+   TRAME — reprend la fiche papier Cochet Dehaene, étoffée.
+   Types : choix (1 réponse), multi (plusieurs), texte, nombre
+   teinte: associe une couleur à certaines réponses (bon/mauvais)
+   ============================================================ */
+const TEINTES_DEFAUT = {
+  "Bon état":"bon","Conforme":"bon","En service":"bon","Neuve":"bon","Oui":"",
+  "A remplacer":"mauvais","À remplacer":"mauvais","Hors service":"mauvais","Vétuste":"urgent",
+  "Besoin mise en sécurité":"mauvais","Mauvais état":"mauvais","Etat d'usage":"moyen","État d'usage":"moyen",
+  "Correcte":"moyen","Démoussage":"moyen","Fissure existante":"mauvais","Flambement apparent":"urgent",
+  "Usagé":"moyen","Absent":"","Non":""
+};
+const SOLS = ["Grès cérame","Granito","Tomette","Sols PVC","Carrelage","Parquet","Autres"];
+const PLAFONDS = ["BA 13","ISOREL","Polystyrène","Lambris","Autres"];
+const MURS = ["Tapisserie","Peinture","Lambris","Toile de verre","Autres"];
+const ETAT2 = ["Bon état","A remplacer"];
+const ETAT3 = ["Bon état","Etat d'usage","A remplacer"];
+
+function blocPiece(prefix){
+  return [
+    {id:prefix+"_sols_type", lbl:"Type de sols", type:"multi", opts:SOLS},
+    {id:prefix+"_sols_etat", lbl:"État des sols", type:"choix", opts:ETAT2},
+    {id:prefix+"_plaf_type", lbl:"Type de plafonds", type:"multi", opts:PLAFONDS},
+    {id:prefix+"_plaf_etat", lbl:"État des plafonds", type:"choix", opts:["Bon état","Mauvais état"]},
+    {id:prefix+"_murs_type", lbl:"Type de murs", type:"multi", opts:MURS},
+    {id:prefix+"_murs_qte", lbl:"Quantité de murs concernés (hors murs à isoler)", type:"texte", ph:"Ex. 100 %"},
+    {id:prefix+"_portes", lbl:"Portes de distribution — nbre à remplacer", type:"choix", opts:["0","1","2","3","4","5+"]},
+    {id:prefix+"_capillaires", lbl:"Remontées capillaires dans les parois", type:"choix", opts:["Oui","Non"]},
+  ];
+}
+
+const RUBRIQUES = [
+{ id:"infos", titre:"Informations logement", champs:[
+  {id:"ville", lbl:"Ville", type:"texte", ph:"Ex. Roost-Warendin"},
+  {id:"adresse", lbl:"Adresse", type:"texte", ph:"N° et rue"},
+  {id:"ug", lbl:"N° UG", type:"texte"},
+  {id:"anciennete", lbl:"Ancienneté de la construction", type:"texte", ph:"Ex. 8 ans"},
+  {id:"occupant", lbl:"Occupant (nom)", type:"texte"},
+  {id:"tel", lbl:"Téléphone occupant", type:"texte"},
+  {id:"agees", lbl:"Personnes âgées", type:"choix", opts:["Oui","Non"]},
+  {id:"agees_age", lbl:"Si oui, âge", type:"texte", ph:"Ex. 76 ans", si:["agees","Oui"]},
+  {id:"pmr", lbl:"Personne à mobilité réduite / adaptation nécessaire", type:"choix", opts:["Oui","Non"]},
+  {id:"visiteur", lbl:"Visiteur (qui réalise la fiche)", type:"texte", ph:"Initiales / nom"},
+  {id:"statut", lbl:"Statut", type:"choix", opts:["Occupé","Vacant","Accès refusé","Absent au RDV"]},
+]},
+{ id:"chauffage", titre:"Chauffage", champs:[
+  {id:"ch_type", lbl:"Type de chauffage", type:"multi", opts:["Gaz","Élec","Poêles","PAC","Autre"]},
+  {id:"ch_chaud", lbl:"Si gaz — type de chaudière", type:"choix", opts:["Condensation","Basse temp.","Autres"]},
+  {id:"ch_ref", lbl:"Référence chaudière", type:"texte", ph:"Ex. Saunier Duval ThemaFast Condens"},
+  {id:"ch_annee", lbl:"Année / âge de la chaudière", type:"texte"},
+  {id:"ch_loc", lbl:"Localisation de la chaudière", type:"choix", opts:["Cuisine","Cellier","SdB","Garage","Combles","Autre"]},
+  {id:"ch_distrib", lbl:"État de la distribution chauffage", type:"choix", opts:ETAT2},
+  {id:"ch_emetteurs", lbl:"Émetteurs", type:"multi", opts:["Radiateurs acier","Radiateurs fonte","Sèche-serviettes","Convecteurs élec","Plancher chauffant"]},
+  {id:"ch_robinets", lbl:"Robinets thermostatiques", type:"choix", opts:["Oui","Non","Partiel"]},
+  {id:"ch_roai", lbl:"ROAI accessible", type:"choix", opts:["Oui","Non"]},
+]},
+{ id:"vmc", titre:"Ventilation (VMC)", champs:[
+  {id:"vmc_type", lbl:"Type de ventilation", type:"choix", opts:["VMC hygro","VMC auto","Naturelle","Aucune"]},
+  {id:"vmc_etat", lbl:"État si présence VMC", type:"choix", opts:["En service","Hors service"]},
+  {id:"vmc_bouches", lbl:"Bouches d'extraction présentes", type:"multi", opts:["Cuisine","SdB","WC","Cellier"]},
+  {id:"vmc_entrees", lbl:"Entrées d'air sur menuiseries", type:"choix", opts:["Oui","Non","Partielles"]},
+  {id:"vmc_encrasse", lbl:"Bouches encrassées / obstruées", type:"choix", opts:["Oui","Non"]},
+]},
+{ id:"elec", titre:"Électricité", champs:[
+  {id:"el_500", lbl:"Présence d'un différentiel 500 mA", type:"choix", opts:["Oui","Non"]},
+  {id:"el_30", lbl:"Présence différentiel(s) 30 mA", type:"choix", opts:["Oui","Non"]},
+  {id:"el_tableau", lbl:"Tableau", type:"choix", opts:["Fusibles","Disjoncteurs"]},
+  {id:"el_etat", lbl:"État général installation électrique", type:"choix", opts:["Conforme","Besoin mise en sécurité","Vétuste"]},
+  {id:"el_terre", lbl:"Mise à la terre apparente", type:"choix", opts:["Oui","Non","Douteuse"]},
+  {id:"el_prises", lbl:"Nombre de prises suffisant", type:"choix", opts:["Oui","Non"]},
+  {id:"el_daaf", lbl:"DAAF (détecteur de fumée) présent", type:"choix", opts:["Oui","Non","HS / pile absente"]},
+]},
+{ id:"isolation", titre:"Isolation des parois verticales", champs:[
+  {id:"iso_ext", lbl:"Doublage sur murs extérieurs", type:"choix", opts:["Oui","Non","Partiellement"]},
+  {id:"iso_ep", lbl:"Épaisseur totale de la paroi (briques + doublage)", type:"texte", ph:"En cm"},
+  {id:"iso_garage", lbl:"Doublage sur murs garage", type:"choix", opts:["Oui","Non"]},
+  {id:"iso_ep_garage", lbl:"Épaisseur totale paroi garage", type:"texte", ph:"En cm"},
+  {id:"iso_porte", lbl:"Porte isolante entre logement et garage", type:"choix", opts:["Oui","Non"]},
+  {id:"iso_locataire", lbl:"Selon le locataire, les parois sont-elles isolées ?", type:"choix", opts:["Oui","Non","Ne se prononce pas"]},
+]},
+{ id:"menuiseries", titre:"Menuiseries extérieures", champs:[
+  {id:"me_chassis", lbl:"Type de châssis", type:"choix", opts:["PVC double vitrage","Bois simple vitrage","Bois double vitrage","Alu","Autres"]},
+  {id:"me_pose", lbl:"Type de pose", type:"choix", opts:["Rénovation","Neuve"]},
+  {id:"me_vr", lbl:"Présence de volets roulants", type:"choix", opts:["Oui","Non","Partiel"]},
+  {id:"me_vr_elec", lbl:"Volets roulants électriques", type:"choix", opts:["Oui","Non","Partiel"]},
+  {id:"me_vr_etat", lbl:"État des volets", type:"choix", opts:ETAT3},
+  {id:"me_porte", lbl:"Porte d'entrée", type:"choix", opts:["Neuve","Correcte","A remplacer"]},
+  {id:"me_etanch", lbl:"Étanchéité / joints des menuiseries", type:"choix", opts:["Bon état","Etat d'usage","Défaillants"]},
+]},
+{ id:"sejour", titre:"RDC — Séjour / cuisine / hall", champs:[
+  ...blocPiece("sj"),
+  {id:"sj_cheminee", lbl:"Conduit de cheminée — quantité", type:"choix", opts:["0","1","2"]},
+  {id:"sj_cpt_gaz", lbl:"Position compteur gaz", type:"texte", ph:"Ex. Façade avant"},
+  {id:"sj_cpt_elec", lbl:"Position compteur élec", type:"texte", ph:"Ex. Façade avant"},
+  {id:"sj_fibre", lbl:"Position arrivée fibre", type:"texte", ph:"Ex. Séjour"},
+]},
+{ id:"chambres", titre:"Chambres", champs: blocPiece("chb") },
+{ id:"etage", titre:"Étage / palier (si concerné)", champs:[
+  {id:"et_concerne", lbl:"Étage présent", type:"choix", opts:["Oui","Non"]},
+  {id:"et_escalier", lbl:"État de l'escalier", type:"choix", opts:ETAT3},
+  {id:"et_gc", lbl:"Garde-corps / rampe conforme", type:"choix", opts:["Oui","Non"]},
+  ...blocPiece("et"),
+]},
+{ id:"sanitaires", titre:"Pièces sanitaires", champs:[
+  {id:"cu_st", lbl:"— CUISINE —", type:"st"},
+  {id:"cu_equipee", lbl:"Présence d'une cuisine équipée", type:"choix", opts:["Oui","Non"]},
+  {id:"cu_evier", lbl:"Si non, état du meuble évier", type:"choix", opts:ETAT2},
+  {id:"cu_faience", lbl:"Présence d'un dosseret de faïence", type:"choix", opts:["Oui","Non"]},
+  {id:"cu_faience_etat", lbl:"État de la faïence", type:"choix", opts:ETAT2},
+  {id:"cu_robinetterie", lbl:"Robinetterie", type:"choix", opts:ETAT2},
+  {id:"sdb_st", lbl:"— SALLE DE BAINS —", type:"st"},
+  {id:"sdb_equip", lbl:"Type d'équipements", type:"multi", opts:["Baignoire","Douche surélevée","Douche extra-plat","Cabine"]},
+  {id:"sdb_equip_etat", lbl:"État de l'équipement", type:"choix", opts:ETAT2},
+  {id:"sdb_lavabo", lbl:"Lavabos", type:"choix", opts:["Colonne","Meuble vasque"]},
+  {id:"sdb_lavabo_etat", lbl:"État lavabos", type:"choix", opts:ETAT2},
+  {id:"sdb_robinetterie", lbl:"Robinetterie / mitigeurs", type:"choix", opts:ETAT2},
+  {id:"sdb_mal", lbl:"Présence d'une attente MàL", type:"choix", opts:["Oui","Non"], note:"PM : mini 60 cm entre bord LL et bord douche ou baignoire"},
+  {id:"sdb_vol", lbl:"Si oui, volume de sécurité respecté", type:"choix", opts:["Oui","Non"]},
+  {id:"sdb_humid", lbl:"Présence d'humidité dans la pièce", type:"choix", opts:["Oui","Non"]},
+  {id:"wc_st", lbl:"— W-C —", type:"st"},
+  {id:"wc_type", lbl:"Type d'équipements", type:"choix", opts:["Cuvette classique","Cuvette réhaussée"]},
+  {id:"wc_chasse", lbl:"Chasse d'eau", type:"choix", opts:["3/6 L","6 L mono débit"]},
+  {id:"wc_etat", lbl:"État cuvette / réservoir", type:"choix", opts:ETAT2},
+  {id:"wc_lavemains", lbl:"Lave-mains présent", type:"choix", opts:["Oui","Non"]},
+]},
+{ id:"humides", titre:"Pièces humides — revêtements", champs:[
+  {id:"ph_sols_type", lbl:"Type de sols", type:"multi", opts:["Sols PVC","Grès cérame","Granito","Carrelage","Autres"]},
+  {id:"ph_sols_etat", lbl:"État des sols", type:"choix", opts:ETAT2},
+  {id:"ph_plaf_type", lbl:"Type de plafonds", type:"multi", opts:["BA 13","ISOREL","Polystyrène / lambris","Autres"]},
+  {id:"ph_plaf_etat", lbl:"État des plafonds", type:"choix", opts:["Bon état","Mauvais état"]},
+  {id:"ph_murs_type", lbl:"Type de murs", type:"multi", opts:MURS},
+  {id:"ph_murs_qte", lbl:"Quantité de murs concernés (hors murs à isoler)", type:"texte", ph:"Ex. 100 %"},
+  {id:"ph_portes", lbl:"Portes de distribution — nbre à remplacer", type:"choix", opts:["0","1","2","3+"]},
+  {id:"ph_faience_etat", lbl:"Faïence murale", type:"choix", opts:["Bon état","A remplacer","Absente"]},
+]},
+{ id:"combles", titre:"Travaux combles / garage", champs:[
+  {id:"co_trappe", lbl:"Présence d'une trappe", type:"choix", opts:["Oui","Non"]},
+  {id:"co_iso", lbl:"Isolation", type:"choix", opts:["Laine soufflée","Laine minérale origine","Autres","Aucune"]},
+  {id:"co_fermettes", lbl:"Espacement entre fermettes", type:"texte", ph:"En cm"},
+  {id:"co_ep", lbl:"Épaisseur isolant", type:"texte", ph:"En cm"},
+  {id:"co_platelage", lbl:"Platelage dans les combles", type:"choix", opts:["Oui","Non","Partiel"]},
+  {id:"co_amenagement", lbl:"Aménagement garage", type:"choix", opts:["Oui","Non"]},
+  {id:"co_nature", lbl:"Si oui, nature des travaux", type:"texte"},
+]},
+{ id:"facades", titre:"Façades / Extérieurs", champs:[
+  {id:"fa_goutt_type", lbl:"Type de gouttières / DEP", type:"choix", opts:["PVC","Zinc","Autres"]},
+  {id:"fa_goutt_etat", lbl:"État gouttières / DEP", type:"choix", opts:ETAT2},
+  {id:"fa_couv_type", lbl:"Type de couvertures", type:"choix", opts:["Tuiles béton","Tuiles terre cuite","Ardoises","Autres"]},
+  {id:"fa_couv_etat", lbl:"État couverture", type:"multi", opts:["Bon état","A remplacer","Démoussage"]},
+  {id:"fa_charpente", lbl:"État charpente", type:"choix", opts:["Bon état","Flambement apparent"]},
+  {id:"fa_facades", lbl:"État des façades", type:"multi", opts:["Bon état","Fissure existante","Peinture parasitaire"]},
+  {id:"fa_rejoint", lbl:"Rejointoiement à prévoir (surface estimée)", type:"texte", ph:"En m²"},
+  {id:"fa_bardage", lbl:"Présence bardage sur pignon", type:"choix", opts:["Oui","Non"]},
+  {id:"fa_bardage_etat", lbl:"État du bardage", type:"choix", opts:ETAT3},
+  {id:"fa_parasitaire", lbl:"Présence d'un parasitaire", type:"multi", opts:["Absent","Extension habitable","Vérandas","Pergolas"]},
+  {id:"fa_pgarage", lbl:"Porte de garage", type:"choix", opts:ETAT2},
+  {id:"fa_pjardin", lbl:"Porte accès jardin / garage", type:"choix", opts:ETAT2},
+  {id:"fa_remise", lbl:"Remise — présence", type:"choix", opts:["Oui","Non"]},
+  {id:"fa_remise_etat", lbl:"État remise", type:"choix", opts:ETAT3},
+  {id:"fa_terrasse", lbl:"Terrasse", type:"choix", opts:["Absente","Béton","Bois","Dalles"]},
+  {id:"fa_terrasse_etat", lbl:"État terrasse", type:"choix", opts:ETAT3},
+  {id:"fa_cloture", lbl:"Type de clôture", type:"multi", opts:["Souple","Rigide","Béton","Haie"]},
+  {id:"fa_cloture_etat", lbl:"État clôture", type:"choix", opts:["Bon état","Usagé","A remplacer"]},
+  {id:"fa_chemin", lbl:"Cheminement en façade avant", type:"multi", opts:["Conformité PMR","Etat d'usage","A remplacer"]},
+  {id:"fa_bal_pos", lbl:"Position BAL", type:"choix", opts:["Sur pied","En façade"]},
+  {id:"fa_bal_etat", lbl:"État BAL", type:"choix", opts:ETAT2},
+  {id:"fa_terres", lbl:"Terres en périphérie au-dessus de la base ?", type:"choix", opts:["Oui","Non"]},
+  {id:"fa_portail", lbl:"Portail / portillon", type:"choix", opts:["Bon état","Etat d'usage","A remplacer","Absent"]},
+]},
+{ id:"commentaires", titre:"Commentaires", champs:[
+  {id:"com_libre", lbl:"Observations générales / demandes de l'occupant", type:"zone"},
+]},
+];
+
+/* ================= État ================= */
+let visites = [];
+let visite = null;
+let rubIndex = 0;
+
+/* ============================================================
+   CONFIGURATION SUPABASE — À RENSEIGNER (voir README)
+   ============================================================ */
+const SUPABASE_URL = "https://ekqmbcyfdkhcovboruvq.supabase.co/rest/v1/";        // Ex. "https://abcdefgh.supabase.co"
+const SUPABASE_ANON_KEY = "sb_publishable_LuGIE6GCpeDhDsX0T5y3rA_GsWxRYV7";   // Clé "anon public" du projet
+
+let sb = null;
+if(SUPABASE_URL && SUPABASE_ANON_KEY && typeof supabase !== 'undefined'){
+  sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+}
+
+/* ================= Stockage (Supabase partagé + cache hors-ligne) ================= */
+function cacheEcrire(id, v){ try{ localStorage.setItem('fv-cache-'+id, JSON.stringify(v)); }catch(e){} }
+function cacheLire(id){ try{ const s=localStorage.getItem('fv-cache-'+id); return s? JSON.parse(s):null; }catch(e){ return null; } }
+function pendingLire(){ try{ return JSON.parse(localStorage.getItem('fv-pending')||'[]'); }catch(e){ return []; } }
+function pendingAjouter(id){ const p=pendingLire(); if(!p.includes(id)){ p.push(id); localStorage.setItem('fv-pending', JSON.stringify(p)); } majStatut(); }
+function pendingRetirer(id){ localStorage.setItem('fv-pending', JSON.stringify(pendingLire().filter(x=>x!==id))); majStatut(); }
+
+function majStatut(){
+  const el = document.getElementById('statutSync');
+  if(!el) return;
+  const n = pendingLire().length;
+  if(!sb){ el.textContent = "⚙️ Base non configurée"; el.style.color='var(--rouge)'; }
+  else if(!navigator.onLine){ el.textContent = "📡 Hors ligne"+(n?` — ${n} fiche(s) à synchroniser`:''); el.style.color='var(--orange)'; }
+  else if(n){ el.textContent = `🔁 ${n} fiche(s) à synchroniser`; el.style.color='var(--orange)'; }
+  else { el.textContent = "✓ Synchronisé"; el.style.color='var(--vert)'; }
+}
+window.addEventListener('online', ()=>{ synchroniser(); });
+window.addEventListener('offline', majStatut);
+
+async function synchroniser(){
+  if(!sb || !navigator.onLine) { majStatut(); return; }
+  for(const id of pendingLire()){
+    const v = cacheLire(id);
+    if(!v){ pendingRetirer(id); continue; }
+    const ok = await pousser(v);
+    if(ok) pendingRetirer(id); else break;
+  }
+  majStatut();
+}
+async function pousser(v){
+  try{
+    const { error } = await sb.from('visites').upsert({
+      id: v.id,
+      ville: v.rep.ville||'', adresse: v.rep.adresse||'',
+      date_visite: v.date||'', pct: pctRempli(v), maj: v.maj,
+      data: v
+    });
+    return !error;
+  }catch(e){ return false; }
+}
+
+async function chargerIndex(){
+  if(!sb){ visites=[]; afficherListe(); afficherConfigManquante(); majStatut(); return; }
+  try{
+    const { data, error } = await sb.from('visites')
+      .select('id, ville, adresse, date_visite, pct, maj')
+      .order('maj', {ascending:false});
+    if(error) throw error;
+    visites = (data||[]).map(d=>({id:d.id, ville:d.ville, adresse:d.adresse, date:d.date_visite, pct:d.pct, maj:d.maj}));
+  }catch(e){
+    toast("Connexion à la base impossible — mode hors ligne");
+    visites = pendingLire().map(id=>cacheLire(id)).filter(Boolean)
+      .map(v=>({id:v.id, ville:v.rep.ville||'', adresse:v.rep.adresse||'', date:v.date, pct:pctRempli(v), maj:v.maj}));
+  }
+  afficherListe(); majStatut();
+  synchroniser();
+}
+function afficherConfigManquante(){
+  document.getElementById('videListe').innerHTML = `
+    <div class="pic">⚙️</div>
+    <p style="text-align:left;max-width:480px;margin:0 auto"><strong>Base de données non configurée.</strong><br><br>
+    Ouvrez ce fichier <code>index.html</code> dans un éditeur de texte et renseignez en haut du script les deux constantes
+    <code>SUPABASE_URL</code> et <code>SUPABASE_ANON_KEY</code> de votre projet Supabase
+    (voir le fichier README d'installation fourni avec l'application).</p>`;
+  document.getElementById('videListe').style.display='block';
+}
+
+async function sauverVisite(){
+  if(!visite) return;
+  visite.maj = Date.now();
+  cacheEcrire(visite.id, visite);
+  const meta = {id:visite.id, ville:visite.rep.ville||'', adresse:visite.rep.adresse||'', date:visite.date, pct:pctRempli(visite), maj:visite.maj};
+  const i = visites.findIndex(v=>v.id===visite.id);
+  if(i>=0) visites[i]=meta; else visites.unshift(meta);
+  if(sb && navigator.onLine){
+    const ok = await pousser(visite);
+    if(!ok) pendingAjouter(visite.id); else pendingRetirer(visite.id);
+  } else {
+    pendingAjouter(visite.id);
+  }
+}
+function pctRempli(v){
+  let tot=0, fait=0;
+  RUBRIQUES.forEach(r=>r.champs.forEach(c=>{
+    if(c.type==='st') return;
+    tot++;
+    const val=v.rep[c.id];
+    if(val!==undefined && val!=='' && !(Array.isArray(val)&&!val.length)) fait++;
+  }));
+  return Math.round(100*fait/tot);
+}
+
+/* ================= Navigation ================= */
+function montrer(id){
+  document.querySelectorAll('.ecran').forEach(e=>e.classList.remove('actif'));
+  document.getElementById(id).classList.add('actif');
+  const liste = id==='ecranListe';
+  document.getElementById('btnRetour').style.display = liste?'none':'block';
+  document.getElementById('btnRapport').style.display = (id==='ecranSommaire')?'block':'none';
+  document.getElementById('fabNouvelle').style.display = liste?'flex':'none';
+  if(liste) document.getElementById('topTitre').textContent='Fiches de visite';
+  window.scrollTo(0,0);
+}
+function retour(){
+  const actif = document.querySelector('.ecran.actif').id;
+  if(actif==='ecranRubrique'){ afficherSommaire(); montrer('ecranSommaire'); }
+  else { visite=null; chargerIndex(); montrer('ecranListe'); }
+}
+
+/* ================= Liste ================= */
+function afficherListe(){
+  const cont = document.getElementById('listeVisites');
+  document.getElementById('videListe').style.display = visites.length?'none':'block';
+  document.getElementById('outilsListe').style.display = visites.length?'flex':'none';
+  cont.innerHTML = visites.map(v=>`
+    <button class="visite-card" onclick="ouvrirVisite('${v.id}')">
+      <div class="adr">${esc(v.adresse)||'Adresse non renseignée'}</div>
+      <div class="meta">
+        ${v.ville?`<span>${esc(v.ville)}</span>`:''}
+        <span>${v.date? new Date(v.date+'T12:00').toLocaleDateString('fr-FR'):''}</span>
+      </div>
+      <div class="jauge"><i style="width:${v.pct||0}%"></i></div>
+      <div class="pct">${v.pct||0} % complété</div>
+    </button>`).join('');
+}
+function nouvelleVisite(){
+  visite = { id:'v'+Date.now().toString(36), date:new Date().toISOString().slice(0,10), rep:{}, notes:{}, photos:{}, maj:Date.now() };
+  afficherSommaire(); montrer('ecranSommaire'); sauverVisite();
+}
+async function ouvrirVisite(id){
+  /* Cache local d'abord (utile hors ligne), sinon base */
+  let v = cacheLire(id);
+  if(sb && navigator.onLine){
+    try{
+      const { data, error } = await sb.from('visites').select('data').eq('id', id).single();
+      if(!error && data && (!v || (data.data.maj||0) >= (v.maj||0))) v = data.data;
+    }catch(e){}
+  }
+  if(!v){ toast("Fiche introuvable (hors ligne ?)"); return; }
+  visite = v;
+  afficherSommaire(); montrer('ecranSommaire');
+}
+async function supprimerVisite(){
+  if(!confirm("Supprimer définitivement cette fiche pour TOUTE l'équipe ?")) return;
+  if(sb && navigator.onLine){
+    try{ await sb.from('visites').delete().eq('id', visite.id); }catch(e){}
+  }
+  try{ localStorage.removeItem('fv-cache-'+visite.id); }catch(e){}
+  pendingRetirer(visite.id);
+  visites = visites.filter(v=>v.id!==visite.id);
+  visite=null; afficherListe(); montrer('ecranListe'); toast("Fiche supprimée");
+}
+
+/* ================= Sommaire ================= */
+function afficherSommaire(){
+  document.getElementById('topTitre').textContent = (visite.rep.adresse||'Nouvelle visite') + (visite.rep.ville?' — '+visite.rep.ville:'');
+  document.getElementById('sommaire').innerHTML = RUBRIQUES.map((r,i)=>{
+    const champs = r.champs.filter(c=>c.type!=='st');
+    const faits = champs.filter(c=>{const v=visite.rep[c.id];return v!==undefined&&v!==''&&!(Array.isArray(v)&&!v.length)}).length;
+    const complet = faits>=Math.ceil(champs.length*0.5);
+    return `<button class="rub-card ${faits?'fait':''}" onclick="ouvrirRubrique(${i})">
+      <span class="num">${i+1}</span>
+      <span class="lbl">${r.titre}</span>
+      <span class="etat">${faits}/${champs.length}</span>
+      <span class="fleche">›</span>
+    </button>`;
+  }).join('');
+}
+
+/* ================= Rubrique ================= */
+function ouvrirRubrique(i){
+  rubIndex = i;
+  afficherRubrique();
+  montrer('ecranRubrique');
+}
+function naviguerRub(dir){
+  sauverTextes();
+  const n = rubIndex+dir;
+  if(n<0 || n>=RUBRIQUES.length){ afficherSommaire(); montrer('ecranSommaire'); return; }
+  rubIndex = n; afficherRubrique(); window.scrollTo(0,0);
+}
+function afficherRubrique(){
+  const r = RUBRIQUES[rubIndex];
+  document.getElementById('topTitre').textContent = (rubIndex+1)+'. '+r.titre;
+  document.getElementById('btnPrec').style.visibility = rubIndex===0?'hidden':'visible';
+  document.getElementById('btnSuiv').textContent = rubIndex===RUBRIQUES.length-1 ? 'Terminer ✓' : 'Suivant ›';
+
+  let html = '';
+  r.champs.forEach(c=>{
+    if(c.si){ const [dep,val]=c.si; if(visite.rep[dep]!==val) return; }
+    if(c.type==='st'){ html += `<div class="sous-titre">${c.lbl.replace(/—/g,'').trim()}</div>`; return; }
+    html += `<div class="champ-bloc"><div class="q">${c.lbl}${c.note?`<small>${c.note}</small>`:''}</div>`;
+    const val = visite.rep[c.id];
+    if(c.type==='choix'){
+      html += `<div class="puces">`+c.opts.map(o=>{
+        const sel = val===o;
+        const teinte = TEINTES_DEFAUT[o]||'';
+        return `<button class="puce ${sel?'sel '+teinte:''}" onclick="repondre('${c.id}','${o.replace(/'/g,"\\'")}',false)">${o}</button>`;
+      }).join('')+`</div>`;
+    } else if(c.type==='multi'){
+      const arr = Array.isArray(val)?val:[];
+      html += `<div class="puces">`+c.opts.map(o=>{
+        const sel = arr.includes(o);
+        const teinte = TEINTES_DEFAUT[o]||'';
+        return `<button class="puce ${sel?'sel '+teinte:''}" onclick="repondre('${c.id}','${o.replace(/'/g,"\\'")}',true)">${o}</button>`;
+      }).join('')+`</div>`;
+    } else if(c.type==='zone'){
+      html += `<textarea data-champ="${c.id}" onchange="sauverTextes()" placeholder="${c.ph||''}">${esc(val||'')}</textarea>`;
+    } else {
+      html += `<input data-champ="${c.id}" onchange="sauverTextes()" placeholder="${c.ph||''}" value="${esc(val||'')}">`;
+    }
+    html += `</div>`;
+  });
+
+  /* Note + photos de la rubrique */
+  html += `<div class="champ-bloc">
+    <div class="q">Observation libre — ${r.titre}</div>
+    <textarea data-note="${r.id}" onchange="sauverTextes()" placeholder="Précision, localisation, demande de l'occupant…">${esc(visite.notes[r.id]||'')}</textarea>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
+      <button class="btn secondaire petit" onclick="prendrePhoto('${r.id}')">📷 Photo</button>
+      <div class="mini-photos">${(visite.photos[r.id]||[]).map((ph,k)=>`<span class="ph"><img src="${ph}"><button class="x" onclick="retirerPhoto('${r.id}',${k})">✕</button></span>`).join('')}</div>
+    </div>
+  </div>`;
+
+  document.getElementById('contenuRubrique').innerHTML = html;
+}
+function repondre(id, opt, multi){
+  sauverTextes();
+  if(multi){
+    let arr = Array.isArray(visite.rep[id])? visite.rep[id]:[];
+    arr = arr.includes(opt)? arr.filter(x=>x!==opt) : [...arr,opt];
+    visite.rep[id]=arr;
+  } else {
+    visite.rep[id] = (visite.rep[id]===opt)? '' : opt;
+  }
+  afficherRubrique(); sauverVisite();
+}
+function sauverTextes(){
+  document.querySelectorAll('[data-champ]').forEach(el=>{ visite.rep[el.dataset.champ]=el.value; });
+  document.querySelectorAll('[data-note]').forEach(el=>{ visite.notes[el.dataset.note]=el.value; });
+  sauverVisite();
+}
+
+/* ================= Photos ================= */
+let photoCible = null;
+function prendrePhoto(rid){ sauverTextes(); photoCible=rid; document.getElementById('inputPhoto').click(); }
+document.getElementById('inputPhoto').addEventListener('change', async function(){
+  const f=this.files[0]; this.value='';
+  if(!f||!photoCible) return;
+  try{
+    const data = await compresser(f,1000,.6);
+    if(!visite.photos[photoCible]) visite.photos[photoCible]=[];
+    visite.photos[photoCible].push(data);
+    afficherRubrique(); sauverVisite();
+  }catch(e){ toast("Photo non lisible"); }
+});
+function retirerPhoto(rid,k){ visite.photos[rid].splice(k,1); afficherRubrique(); sauverVisite(); }
+function compresser(file,maxDim,q){
+  return new Promise((res,rej)=>{
+    const img=new Image();
+    img.onload=()=>{
+      let w=img.width,h=img.height;
+      if(w>h&&w>maxDim){h*=maxDim/w;w=maxDim}else if(h>maxDim){w*=maxDim/h;h=maxDim}
+      const c=document.createElement('canvas');c.width=w;c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      res(c.toDataURL('image/jpeg',q));
+    };
+    img.onerror=rej;
+    img.src=URL.createObjectURL(file);
+  });
+}
+
+/* ================= Rapport ================= */
+const NEGATIFS = ["A remplacer","À remplacer","Hors service","Vétuste","Besoin mise en sécurité","Mauvais état","Fissure existante","Flambement apparent","Défaillants","HS / pile absente"];
+function genererRapport(){
+  const v=visite;
+  let html = `<div class="rp-tete">
+    <div><h1>Fiche de visite — Diagnostic logement</h1>
+    <div style="font-size:12px;color:#555">${esc(v.rep.adresse)||''} ${v.rep.ville?'— '+esc(v.rep.ville):''} ${v.rep.ug?'· UG '+esc(v.rep.ug):''}</div></div>
+    <div style="font-size:11px;text-align:right">Visite du ${v.date? new Date(v.date+'T12:00').toLocaleDateString('fr-FR'):'—'}<br>Édité le ${new Date().toLocaleDateString('fr-FR')}</div>
+  </div>`;
+
+  RUBRIQUES.forEach(r=>{
+    const lignes = [];
+    r.champs.forEach(c=>{
+      if(c.type==='st') return;
+      let val = v.rep[c.id];
+      if(Array.isArray(val)) val = val.join(', ');
+      if(val===undefined||val==='') return;
+      const neg = NEGATIFS.some(n=>String(val).includes(n)) || (c.id==='fa_terres'&&val==='Oui') || (c.id==='sdb_humid'&&val==='Oui') || (String(val)==='Non' && /500|30 mA|DAAF|terre|prises|garde-corps|MàL|volume/i.test(c.lbl));
+      lignes.push(`<tr><td class="lib">${c.lbl}</td><td class="val ${neg?'neg':''}">${esc(String(val))}</td></tr>`);
+    });
+    const note = v.notes[r.id];
+    const phs = v.photos[r.id]||[];
+    if(!lignes.length && !note && !phs.length) return;
+    html += `<div class="rp-rub"><h3>${r.titre}</h3>`;
+    if(lignes.length) html += `<table>${lignes.join('')}</table>`;
+    if(note) html += `<div class="rp-note">${esc(note).replace(/\n/g,'<br>')}</div>`;
+    if(phs.length) html += `<div class="rp-photos">${phs.map(s=>`<img src="${s}">`).join('')}</div>`;
+    html += `</div>`;
+  });
+
+  html += `<div style="margin-top:22px;display:flex;justify-content:space-between;font-size:11px">
+    <div>Signature visiteur :<br><br><br>______________________</div>
+    <div>Visa Maître d'ouvrage :<br><br><br>______________________</div>
+  </div>`;
+
+  document.getElementById('rapport').innerHTML = html;
+  window.print();
+}
+
+/* ================= Exports ================= */
+function telecharger(nom,contenu){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([contenu],{type:'application/json'}));
+  a.download=nom; a.click();
+}
+async function chargerToutes(){
+  if(sb && navigator.onLine){
+    try{
+      const { data, error } = await sb.from('visites').select('data').order('maj',{ascending:false});
+      if(!error) return (data||[]).map(d=>d.data);
+    }catch(e){}
+  }
+  return visites.map(m=>cacheLire(m.id)).filter(Boolean);
+}
+function exporterVisite(){
+  telecharger(`visite_${(visite.rep.adresse||'logement').replace(/[^a-z0-9]/gi,'_')}_${visite.date}.json`, JSON.stringify(visite,null,2));
+  toast("Fiche exportée");
+}
+async function exporterTout(){
+  const tout = await chargerToutes();
+  telecharger(`visites_export_${new Date().toISOString().slice(0,10)}.json`, JSON.stringify(tout,null,2));
+  toast(tout.length+" fiches exportées");
+}
+
+/* ================= Export Excel ================= */
+function xlsxPret(){
+  if(typeof XLSX==='undefined'){ toast("Bibliothèque Excel non chargée — vérifiez la connexion puis rouvrez l'application"); return false; }
+  return true;
+}
+function nomFichier(base){
+  return base.replace(/[^a-zA-Z0-9àâäéèêëîïôöùûüç \-_]/g,'').trim().replace(/\s+/g,'_').slice(0,60);
+}
+function lignesFiche(v){
+  const lignes=[];
+  RUBRIQUES.forEach(r=>{
+    r.champs.forEach(c=>{
+      if(c.type==='st') return;
+      let val=v.rep[c.id];
+      if(Array.isArray(val)) val=val.join(', ');
+      if(val===undefined||val==='') return;
+      lignes.push({Rubrique:r.titre, Question:c.lbl, Réponse:String(val)});
+    });
+    if(v.notes[r.id]) lignes.push({Rubrique:r.titre, Question:'Observation libre', Réponse:v.notes[r.id]});
+    const nbPh=(v.photos[r.id]||[]).length;
+    if(nbPh) lignes.push({Rubrique:r.titre, Question:'Photos', Réponse:nbPh+' photo(s) — voir rapport PDF'});
+  });
+  return lignes;
+}
+function exporterExcelVisite(){
+  if(!xlsxPret()) return;
+  const v=visite;
+  const wb=XLSX.utils.book_new();
+
+  const entete=[
+    ["FICHE DE VISITE — DIAGNOSTIC LOGEMENT"],
+    ["Adresse", v.rep.adresse||'', "Ville", v.rep.ville||''],
+    ["N° UG", v.rep.ug||'', "Date de visite", v.date? new Date(v.date+'T12:00').toLocaleDateString('fr-FR'):''],
+    ["Occupant", v.rep.occupant||'', "Complétude", pctRempli(v)+" %"],
+    []
+  ];
+  const lignes=lignesFiche(v);
+  const ws=XLSX.utils.aoa_to_sheet(entete);
+  XLSX.utils.sheet_add_json(ws, lignes, {origin:'A6'});
+  ws['!cols']=[{wch:30},{wch:48},{wch:50},{wch:20}];
+  XLSX.utils.book_append_sheet(wb, ws, "Fiche");
+
+  XLSX.writeFile(wb, `Fiche_${nomFichier(v.rep.adresse||'logement')}_${v.date||''}.xlsx`);
+  toast("Excel exporté ✓");
+}
+async function exporterToutExcel(){
+  if(!xlsxPret()) return;
+  const tout = await chargerToutes();
+  if(!tout.length){ toast("Aucune fiche à exporter"); return; }
+  const wb=XLSX.utils.book_new();
+
+  /* --- Feuille Synthèse : 1 ligne par logement, 1 colonne par question --- */
+  const colonnes=[];
+  RUBRIQUES.forEach(r=>r.champs.forEach(c=>{
+    if(c.type!=='st') colonnes.push({id:c.id, titre:r.titre+' — '+c.lbl});
+  }));
+  const synth=tout.map(v=>{
+    const ligne={
+      "Ville": v.rep.ville||'', "Adresse": v.rep.adresse||'', "N° UG": v.rep.ug||'',
+      "Date visite": v.date? new Date(v.date+'T12:00').toLocaleDateString('fr-FR'):'',
+      "Complétude %": pctRempli(v)
+    };
+    colonnes.forEach(c=>{
+      let val=v.rep[c.id];
+      if(Array.isArray(val)) val=val.join(', ');
+      ligne[c.titre]=val||'';
+    });
+    return ligne;
+  });
+  const wsS=XLSX.utils.json_to_sheet(synth);
+  wsS['!cols']=[{wch:16},{wch:28},{wch:10},{wch:12},{wch:12},...colonnes.map(()=>({wch:24}))];
+  XLSX.utils.book_append_sheet(wb, wsS, "Synthèse");
+
+  /* --- Feuille Détail : toutes les réponses en lignes --- */
+  const detail=[];
+  tout.forEach(v=>{
+    lignesFiche(v).forEach(l=>detail.push({
+      Ville:v.rep.ville||'', Adresse:v.rep.adresse||'', "Date":v.date||'', ...l
+    }));
+  });
+  const wsD=XLSX.utils.json_to_sheet(detail);
+  wsD['!cols']=[{wch:16},{wch:28},{wch:11},{wch:30},{wch:48},{wch:50}];
+  XLSX.utils.book_append_sheet(wb, wsD, "Détail");
+
+  /* --- Feuille Points négatifs : extraction des éléments à traiter --- */
+  const negs=[];
+  tout.forEach(v=>{
+    lignesFiche(v).forEach(l=>{
+      if(NEGATIFS.some(n=>l.Réponse.includes(n))) negs.push({
+        Ville:v.rep.ville||'', Adresse:v.rep.adresse||'', Rubrique:l.Rubrique, Question:l.Question, Constat:l.Réponse
+      });
+    });
+  });
+  const wsN=XLSX.utils.json_to_sheet(negs.length?negs:[{Info:"Aucun point négatif relevé"}]);
+  wsN['!cols']=[{wch:16},{wch:28},{wch:30},{wch:48},{wch:30}];
+  XLSX.utils.book_append_sheet(wb, wsN, "Points à traiter");
+
+  XLSX.writeFile(wb, `Synthese_visites_${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast(tout.length+" fiches exportées en Excel ✓");
+}
+
+/* ================= Utilitaires ================= */
+function esc(s){ return String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+let toastTimer;
+function toast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.classList.add('visible');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>t.classList.remove('visible'),2400);
+}
+
+chargerIndex();
+</script>
+</body>
+</html>
