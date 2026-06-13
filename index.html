@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Fiche de visite — Diagnostic logement</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
 :root{
@@ -33,14 +34,36 @@ main{padding:14px;max-width:760px;margin:0 auto}
 .ecran.actif{display:block;animation:app .18s ease}
 @keyframes app{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 
+/* Grille des chantiers */
+.grille-chantiers{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.chantier-card{background:var(--carte);border:1px solid var(--ligne);border-radius:var(--r);overflow:hidden;text-align:left;box-shadow:0 1px 3px rgba(30,37,48,.08);padding:0;display:flex;flex-direction:column}
+.chantier-card:active{transform:scale(.99)}
+.chantier-card .vignette{width:100%;aspect-ratio:4/3;object-fit:cover;background:#E9E7DF;display:block}
+.chantier-card .vignette.placeholder{display:flex;align-items:center;justify-content:center;font-size:34px;color:#B5B1A6}
+.chantier-card .nom{font-weight:700;font-size:14.5px;padding:9px 11px 4px}
+.chantier-card .sub{font-size:11.5px;color:var(--gris);padding:0 11px 10px}
+
+/* Aperçu image à la création */
+.apercu-img{width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:8px;border:1px solid var(--ligne);margin-top:8px;background:#E9E7DF;display:none}
+
 /* Liste des visites */
-.visite-card{background:var(--carte);border:1px solid var(--ligne);border-left:5px solid var(--bleu);border-radius:var(--r);padding:13px 14px;margin-bottom:11px;display:block;width:100%;text-align:left;box-shadow:0 1px 3px rgba(30,37,48,.06)}
+.visite-card{background:var(--carte);border:1px solid var(--ligne);border-left:5px solid var(--bleu);border-radius:var(--r);padding:13px 14px;margin-bottom:11px;display:block;width:100%;text-align:left;box-shadow:0 1px 3px rgba(30,37,48,.06);position:relative}
 .visite-card:active{transform:scale(.99)}
 .visite-card .adr{font-weight:700;font-size:15px}
 .visite-card .meta{font-size:12.5px;color:var(--gris);display:flex;flex-wrap:wrap;gap:3px 12px;margin-top:2px}
 .visite-card .jauge{height:5px;background:#ECEAE2;border-radius:99px;margin-top:9px;overflow:hidden}
 .visite-card .jauge i{display:block;height:100%;background:var(--vert);border-radius:99px}
 .visite-card .pct{font-size:11px;color:var(--gris);margin-top:3px}
+.visite-card .coche{position:absolute;top:12px;right:12px;width:26px;height:26px;border-radius:7px;border:2px solid var(--ligne);background:#fff;display:none;align-items:center;justify-content:center;font-size:16px;font-weight:800;color:#fff}
+body.mode-select .visite-card .coche{display:flex}
+body.mode-select .visite-card{padding-right:48px}
+.visite-card.coché{border-left-color:var(--vert);background:#F2F9F4}
+.visite-card.coché .coche{background:var(--vert);border-color:var(--vert)}
+.barre-select{position:sticky;top:54px;z-index:30;background:var(--bleu-fonce);color:#fff;border-radius:9px;padding:9px 12px;margin-bottom:12px;display:none;align-items:center;gap:8px;flex-wrap:wrap}
+body.mode-select .barre-select{display:flex}
+.barre-select .cnt{font-weight:700;font-size:13px;flex:1;min-width:90px}
+.barre-select button{background:#fff;color:var(--bleu-fonce);font-weight:700;font-size:12.5px;border-radius:7px;padding:7px 10px}
+.barre-select button.ghost{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.5)}
 .vide{text-align:center;padding:48px 20px;color:var(--gris)}
 .vide .pic{font-size:42px;margin-bottom:10px}
 
@@ -107,6 +130,8 @@ main{padding:14px;max-width:760px;margin:0 auto}
   #rapport .neg{color:var(--rouge)}
   #rapport .rp-photos img{width:118px;height:88px;object-fit:cover;margin:3px 4px 0 0;border:1px solid #999}
   #rapport .rp-note{border-left:3px solid var(--bleu);padding:3px 8px;margin-top:5px;font-style:italic;color:#333}
+  #rapport .rp-fiche{break-after:page;page-break-after:always}
+  #rapport .rp-fiche:last-child{break-after:auto;page-break-after:auto}
 }
 </style>
 </head>
@@ -122,31 +147,55 @@ main{padding:14px;max-width:760px;margin:0 auto}
 </div>
 
 <main>
-  <section class="ecran actif" id="ecranListe">
+  <!-- ÉCRAN 1 : CHANTIERS -->
+  <section class="ecran actif" id="ecranChantiers">
+    <div class="grille-chantiers" id="grilleChantiers"></div>
+    <div class="vide" id="videChantiers" style="display:none">
+      <div class="pic">🏗️</div>
+      <p><strong>Aucun chantier.</strong><br>Créez un chantier (commune) pour commencer.</p>
+    </div>
+    <div class="rangée-btn" style="margin-top:14px">
+      <button class="btn secondaire petit" onclick="chargerChantiers();toast('Liste actualisée')">🔄 Actualiser</button>
+      <span id="statutSync" style="font-size:12px;font-weight:700;align-self:center"></span>
+    </div>
+    <p class="note-sync">👥 Partagé — toute l'équipe voit les mêmes chantiers et fiches.</p>
+  </section>
+
+  <!-- ÉCRAN 2 : FICHES D'UN CHANTIER -->
+  <section class="ecran" id="ecranListe">
+    <div class="barre-select" id="barreSelect">
+      <span class="cnt" id="selCnt">0 sélectionnée</span>
+      <button onclick="genererRapportsSelection()">🖨️ Rapports</button>
+      <button onclick="exporterPhotosSelection()">🖼️ Photos</button>
+      <button class="ghost" onclick="toutSelectionner()">Tout</button>
+      <button class="ghost" onclick="quitterSelection()">✕</button>
+    </div>
     <div id="listeVisites"></div>
     <div class="vide" id="videListe" style="display:none">
       <div class="pic">🏠</div>
-      <p><strong>Aucune visite enregistrée.</strong><br>Créez une fiche pour commencer.</p>
+      <p><strong>Aucune fiche dans ce chantier.</strong><br>Créez une fiche de visite pour commencer.</p>
     </div>
     <div class="rangée-btn" id="outilsListe" style="display:none">
-      <button class="btn principal petit" onclick="exporterToutExcel()">📊 Excel (toutes)</button>
-      <button class="btn secondaire petit" onclick="exporterTout()">JSON (toutes)</button>
+      <button class="btn secondaire petit" onclick="activerSelection()">☑️ Sélectionner</button>
+      <button class="btn secondaire petit" onclick="exporterPhotosChantier()">🖼️ Toutes les photos</button>
     </div>
-    <div class="rangée-btn" style="margin-top:0">
-      <button class="btn secondaire petit" onclick="chargerIndex();toast('Liste actualisée')">🔄 Actualiser</button>
-      <span id="statutSync" style="font-size:12px;font-weight:700;align-self:center"></span>
+    <div class="rangée-btn" id="outilsListe2" style="display:none">
+      <button class="btn secondaire petit" onclick="exporterExcelChantier()">📊 Excel chantier</button>
+      <button class="btn secondaire petit" onclick="exporterChantierJSON()">JSON</button>
     </div>
-    <p class="note-sync">👥 Fiches partagées — toute l'équipe voit et modifie les mêmes fiches.</p>
   </section>
 
   <section class="ecran" id="ecranSommaire">
     <div id="sommaire"></div>
     <div class="rangée-btn">
-      <button class="btn principal" onclick="exporterExcelVisite()">📊 Exporter Excel</button>
+      <button class="btn principal" onclick="genererRapport()">🖨️ Éditer le rapport</button>
     </div>
     <div class="rangée-btn">
-      <button class="btn secondaire" onclick="exporterVisite()">Exporter JSON</button>
-      <button class="btn danger" onclick="supprimerVisite()">Supprimer</button>
+      <button class="btn secondaire" onclick="exporterPhotosVisite()">🖼️ Photos de la fiche</button>
+      <button class="btn secondaire" onclick="exporterExcelVisite()">📊 Excel</button>
+    </div>
+    <div class="rangée-btn">
+      <button class="btn danger" onclick="supprimerVisite()">Supprimer la fiche</button>
     </div>
   </section>
 
@@ -159,9 +208,10 @@ main{padding:14px;max-width:760px;margin:0 auto}
   </section>
 </main>
 
-<button class="btn principal fab" id="fabNouvelle" onclick="nouvelleVisite()">＋ Nouvelle visite</button>
+<button class="btn principal fab" id="fab" onclick="actionFab()">＋ Nouveau chantier</button>
 <div class="toast" id="toast"></div>
 <input type="file" accept="image/*" capture="environment" id="inputPhoto" style="display:none">
+<input type="file" accept="image/*" id="inputChantierImg" style="display:none">
 <div id="rapport"></div>
 
 <script>
@@ -343,6 +393,10 @@ const RUBRIQUES = [
 let visites = [];
 let visite = null;
 let rubIndex = 0;
+let chantiers = [];          // liste des chantiers (métadonnées)
+let chantierActif = null;    // {id, nom, image}
+let modeSelection = false;
+let selection = new Set();
 
 /* ============================================================
    CONFIGURATION SUPABASE — À RENSEIGNER (voir README)
@@ -376,6 +430,11 @@ window.addEventListener('offline', majStatut);
 
 async function synchroniser(){
   if(!sb || !navigator.onLine) { majStatut(); return; }
+  // Chantiers en attente
+  let pc = []; try{ pc = JSON.parse(localStorage.getItem('fv-pending-chantiers')||'[]'); }catch(e){}
+  for(const c of pc){ await pousserChantier(c); }
+  localStorage.setItem('fv-pending-chantiers','[]');
+  // Fiches en attente
   for(const id of pendingLire()){
     const v = cacheLire(id);
     if(!v){ pendingRetirer(id); continue; }
@@ -388,6 +447,7 @@ async function pousser(v){
   try{
     const { error } = await sb.from('visites').upsert({
       id: v.id,
+      chantier_id: v.chantier_id||null,
       ville: v.rep.ville||'', adresse: v.rep.adresse||'',
       date_visite: v.date||'', pct: pctRempli(v), maj: v.maj,
       data: v
@@ -396,30 +456,53 @@ async function pousser(v){
   }catch(e){ return false; }
 }
 
-async function chargerIndex(){
-  if(!sb){ visites=[]; afficherListe(); afficherConfigManquante(); majStatut(); return; }
+/* ---- CHANTIERS ---- */
+async function pousserChantier(c){
+  try{
+    const { error } = await sb.from('chantiers').upsert({
+      id:c.id, nom:c.nom||'', image:c.image||'', maj:c.maj
+    });
+    return !error;
+  }catch(e){ return false; }
+}
+async function chargerChantiers(){
+  if(!sb){ chantiers=[]; afficherChantiers(); afficherConfigManquante(); majStatut(); return; }
+  try{
+    const { data, error } = await sb.from('chantiers')
+      .select('id, nom, image, maj').order('nom',{ascending:true});
+    if(error) throw error;
+    chantiers = data||[];
+  }catch(e){
+    toast("Connexion à la base impossible — mode hors ligne");
+    try{ chantiers = JSON.parse(localStorage.getItem('fv-chantiers')||'[]'); }catch(_){ chantiers=[]; }
+  }
+  try{ localStorage.setItem('fv-chantiers', JSON.stringify(chantiers)); }catch(e){}
+  afficherChantiers(); majStatut(); synchroniser();
+}
+async function chargerVisitesChantier(cid){
+  if(!sb){ visites=[]; afficherListe(); majStatut(); return; }
   try{
     const { data, error } = await sb.from('visites')
-      .select('id, ville, adresse, date_visite, pct, maj')
+      .select('id, ville, adresse, date_visite, pct, maj, chantier_id')
+      .eq('chantier_id', cid)
       .order('maj', {ascending:false});
     if(error) throw error;
     visites = (data||[]).map(d=>({id:d.id, ville:d.ville, adresse:d.adresse, date:d.date_visite, pct:d.pct, maj:d.maj}));
   }catch(e){
     toast("Connexion à la base impossible — mode hors ligne");
-    visites = pendingLire().map(id=>cacheLire(id)).filter(Boolean)
+    visites = pendingLire().map(id=>cacheLire(id)).filter(v=>v&&v.chantier_id===cid)
       .map(v=>({id:v.id, ville:v.rep.ville||'', adresse:v.rep.adresse||'', date:v.date, pct:pctRempli(v), maj:v.maj}));
   }
-  afficherListe(); majStatut();
-  synchroniser();
+  afficherListe(); majStatut(); synchroniser();
 }
 function afficherConfigManquante(){
-  document.getElementById('videListe').innerHTML = `
+  document.getElementById('videChantiers').innerHTML = `
     <div class="pic">⚙️</div>
     <p style="text-align:left;max-width:480px;margin:0 auto"><strong>Base de données non configurée.</strong><br><br>
-    Ouvrez ce fichier <code>index.html</code> dans un éditeur de texte et renseignez en haut du script les deux constantes
+    Ouvrez <code>index.html</code> dans un éditeur de texte et renseignez en haut du script les deux constantes
     <code>SUPABASE_URL</code> et <code>SUPABASE_ANON_KEY</code> de votre projet Supabase
-    (voir le fichier README d'installation fourni avec l'application).</p>`;
-  document.getElementById('videListe').style.display='block';
+    (voir le fichier README d'installation).</p>`;
+  document.getElementById('videChantiers').style.display='block';
 }
 
 async function sauverVisite(){
@@ -451,26 +534,94 @@ function pctRempli(v){
 function montrer(id){
   document.querySelectorAll('.ecran').forEach(e=>e.classList.remove('actif'));
   document.getElementById(id).classList.add('actif');
-  const liste = id==='ecranListe';
-  document.getElementById('btnRetour').style.display = liste?'none':'block';
-  document.getElementById('btnRapport').style.display = (id==='ecranSommaire')?'block':'none';
-  document.getElementById('fabNouvelle').style.display = liste?'flex':'none';
-  if(liste) document.getElementById('topTitre').textContent='Fiches de visite';
+  const fab = document.getElementById('fab');
+  document.getElementById('btnRetour').style.display = (id==='ecranChantiers')?'none':'block';
+  document.getElementById('btnRapport').style.display = 'none';
+  if(id==='ecranChantiers'){
+    fab.style.display='flex'; fab.textContent='＋ Nouveau chantier';
+    document.getElementById('topTitre').textContent='Chantiers';
+  } else if(id==='ecranListe'){
+    fab.style.display='flex'; fab.textContent='＋ Nouvelle fiche';
+    document.getElementById('topTitre').textContent = chantierActif? chantierActif.nom : 'Fiches de visite';
+  } else {
+    fab.style.display='none';
+  }
   window.scrollTo(0,0);
+}
+function actionFab(){
+  const actif = document.querySelector('.ecran.actif').id;
+  if(actif==='ecranChantiers') nouveauChantier();
+  else if(actif==='ecranListe') nouvelleVisite();
 }
 function retour(){
   const actif = document.querySelector('.ecran.actif').id;
   if(actif==='ecranRubrique'){ afficherSommaire(); montrer('ecranSommaire'); }
-  else { visite=null; chargerIndex(); montrer('ecranListe'); }
+  else if(actif==='ecranSommaire'){ visite=null; chargerVisitesChantier(chantierActif.id); montrer('ecranListe'); }
+  else if(actif==='ecranListe'){ quitterSelection(); chantierActif=null; chargerChantiers(); montrer('ecranChantiers'); }
 }
 
-/* ================= Liste ================= */
+/* ================= Écran CHANTIERS ================= */
+function afficherChantiers(){
+  const cont = document.getElementById('grilleChantiers');
+  document.getElementById('videChantiers').style.display = chantiers.length?'none':'block';
+  cont.innerHTML = chantiers.map(c=>`
+    <button class="chantier-card" onclick="ouvrirChantier('${c.id}')">
+      ${c.image
+        ? `<img class="vignette" src="${c.image}">`
+        : `<div class="vignette placeholder">🏗️</div>`}
+      <div class="nom">${esc(c.nom)||'Sans nom'}</div>
+    </button>`).join('');
+}
+let nouvImage = '';
+function nouveauChantier(){
+  nouvImage='';
+  const nom = prompt("Nom du chantier (commune) :");
+  if(nom===null) return;
+  if(!nom.trim()){ toast("Nom requis"); return; }
+  if(confirm("Ajouter une photo pour ce chantier ?\n\nOK = choisir une image · Annuler = créer sans photo")){
+    chantierEnCours = {id:'c'+Date.now().toString(36), nom:nom.trim(), image:'', maj:Date.now()};
+    document.getElementById('inputChantierImg').click();
+  } else {
+    enregistrerChantier({id:'c'+Date.now().toString(36), nom:nom.trim(), image:'', maj:Date.now()});
+  }
+}
+let chantierEnCours = null;
+document.getElementById('inputChantierImg').addEventListener('change', async function(){
+  const f=this.files[0]; this.value='';
+  if(f){
+    try{ chantierEnCours.image = await compresser(f, 800, .6); }catch(e){ toast("Image non lisible"); }
+  }
+  enregistrerChantier(chantierEnCours);
+});
+async function enregistrerChantier(c){
+  chantiers.push(c);
+  chantiers.sort((a,b)=>(a.nom||'').localeCompare(b.nom||''));
+  try{ localStorage.setItem('fv-chantiers', JSON.stringify(chantiers)); }catch(e){}
+  afficherChantiers();
+  if(sb && navigator.onLine){ const ok=await pousserChantier(c); toast(ok?"Chantier créé ✓":"Chantier créé (à synchroniser)"); if(!ok) filerChantier(c); }
+  else { filerChantier(c); toast("Chantier créé (hors ligne)"); }
+  ouvrirChantier(c.id);
+}
+function filerChantier(c){
+  let pc=[]; try{ pc=JSON.parse(localStorage.getItem('fv-pending-chantiers')||'[]'); }catch(e){}
+  if(!pc.find(x=>x.id===c.id)){ pc.push(c); localStorage.setItem('fv-pending-chantiers', JSON.stringify(pc)); }
+}
+function ouvrirChantier(id){
+  chantierActif = chantiers.find(c=>c.id===id) || {id, nom:'Chantier'};
+  quitterSelection();
+  chargerVisitesChantier(id);
+  montrer('ecranListe');
+}
+
+/* ================= Liste des fiches ================= */
 function afficherListe(){
   const cont = document.getElementById('listeVisites');
   document.getElementById('videListe').style.display = visites.length?'none':'block';
   document.getElementById('outilsListe').style.display = visites.length?'flex':'none';
+  document.getElementById('outilsListe2').style.display = visites.length?'flex':'none';
   cont.innerHTML = visites.map(v=>`
-    <button class="visite-card" onclick="ouvrirVisite('${v.id}')">
+    <button class="visite-card ${selection.has(v.id)?'coché':''}" onclick="cliquerFiche('${v.id}')">
+      <div class="coche">${selection.has(v.id)?'✓':''}</div>
       <div class="adr">${esc(v.adresse)||'Adresse non renseignée'}</div>
       <div class="meta">
         ${v.ville?`<span>${esc(v.ville)}</span>`:''}
@@ -479,13 +630,34 @@ function afficherListe(){
       <div class="jauge"><i style="width:${v.pct||0}%"></i></div>
       <div class="pct">${v.pct||0} % complété</div>
     </button>`).join('');
+  majBarreSelection();
+}
+function cliquerFiche(id){
+  if(modeSelection){
+    if(selection.has(id)) selection.delete(id); else selection.add(id);
+    afficherListe();
+  } else {
+    ouvrirVisite(id);
+  }
+}
+function activerSelection(){ modeSelection=true; document.body.classList.add('mode-select'); afficherListe(); }
+function quitterSelection(){ modeSelection=false; selection.clear(); document.body.classList.remove('mode-select'); if(document.getElementById('listeVisites')) afficherListe(); }
+function toutSelectionner(){
+  if(selection.size===visites.length) selection.clear();
+  else visites.forEach(v=>selection.add(v.id));
+  afficherListe();
+}
+function majBarreSelection(){
+  const el=document.getElementById('selCnt');
+  if(el) el.textContent = selection.size+' sélectionnée'+(selection.size>1?'s':'');
 }
 function nouvelleVisite(){
-  visite = { id:'v'+Date.now().toString(36), date:new Date().toISOString().slice(0,10), rep:{}, notes:{}, photos:{}, maj:Date.now() };
+  visite = { id:'v'+Date.now().toString(36), chantier_id:chantierActif?chantierActif.id:null,
+    date:new Date().toISOString().slice(0,10), rep:{}, notes:{}, photos:{}, maj:Date.now() };
+  if(chantierActif && chantierActif.nom) visite.rep.ville = chantierActif.nom;
   afficherSommaire(); montrer('ecranSommaire'); sauverVisite();
 }
 async function ouvrirVisite(id){
-  /* Cache local d'abord (utile hors ligne), sinon base */
   let v = cacheLire(id);
   if(sb && navigator.onLine){
     try{
@@ -495,6 +667,7 @@ async function ouvrirVisite(id){
   }
   if(!v){ toast("Fiche introuvable (hors ligne ?)"); return; }
   visite = v;
+  if(!visite.chantier_id && chantierActif) visite.chantier_id = chantierActif.id;
   afficherSommaire(); montrer('ecranSommaire');
 }
 async function supprimerVisite(){
@@ -505,7 +678,7 @@ async function supprimerVisite(){
   try{ localStorage.removeItem('fv-cache-'+visite.id); }catch(e){}
   pendingRetirer(visite.id);
   visites = visites.filter(v=>v.id!==visite.id);
-  visite=null; afficherListe(); montrer('ecranListe'); toast("Fiche supprimée");
+  visite=null; chargerVisitesChantier(chantierActif.id); montrer('ecranListe'); toast("Fiche supprimée");
 }
 
 /* ================= Sommaire ================= */
@@ -629,14 +802,12 @@ function compresser(file,maxDim,q){
 
 /* ================= Rapport ================= */
 const NEGATIFS = ["A remplacer","À remplacer","Hors service","Vétuste","Besoin mise en sécurité","Mauvais état","Fissure existante","Flambement apparent","Défaillants","HS / pile absente"];
-function genererRapport(){
-  const v=visite;
-  let html = `<div class="rp-tete">
+function rapportHTML(v){
+  let html = `<div class="rp-fiche"><div class="rp-tete">
     <div><h1>Fiche de visite — Diagnostic logement</h1>
     <div style="font-size:12px;color:#555">${esc(v.rep.adresse)||''} ${v.rep.ville?'— '+esc(v.rep.ville):''} ${v.rep.ug?'· UG '+esc(v.rep.ug):''}</div></div>
     <div style="font-size:11px;text-align:right">Visite du ${v.date? new Date(v.date+'T12:00').toLocaleDateString('fr-FR'):'—'}<br>Édité le ${new Date().toLocaleDateString('fr-FR')}</div>
   </div>`;
-
   RUBRIQUES.forEach(r=>{
     const lignes = [];
     r.champs.forEach(c=>{
@@ -647,8 +818,8 @@ function genererRapport(){
       const neg = NEGATIFS.some(n=>String(val).includes(n)) || (c.id==='fa_terres'&&val==='Oui') || (c.id==='sdb_humid'&&val==='Oui') || (String(val)==='Non' && /500|30 mA|DAAF|terre|prises|garde-corps|MàL|volume/i.test(c.lbl));
       lignes.push(`<tr><td class="lib">${c.lbl}</td><td class="val ${neg?'neg':''}">${esc(String(val))}</td></tr>`);
     });
-    const note = v.notes[r.id];
-    const phs = v.photos[r.id]||[];
+    const note = (v.notes||{})[r.id];
+    const phs = (v.photos||{})[r.id]||[];
     if(!lignes.length && !note && !phs.length) return;
     html += `<div class="rp-rub"><h3>${r.titre}</h3>`;
     if(lignes.length) html += `<table>${lignes.join('')}</table>`;
@@ -656,39 +827,132 @@ function genererRapport(){
     if(phs.length) html += `<div class="rp-photos">${phs.map(s=>`<img src="${s}">`).join('')}</div>`;
     html += `</div>`;
   });
-
   html += `<div style="margin-top:22px;display:flex;justify-content:space-between;font-size:11px">
     <div>Signature visiteur :<br><br><br>______________________</div>
     <div>Visa Maître d'ouvrage :<br><br><br>______________________</div>
-  </div>`;
-
+  </div></div>`;
+  return html;
+}
+function genererRapport(){
+  document.getElementById('rapport').innerHTML = rapportHTML(visite);
+  window.print();
+}
+async function genererRapportsSelection(){
+  if(!selection.size){ toast("Sélectionnez au moins une fiche"); return; }
+  toast("Préparation des rapports…");
+  const ids=[...selection];
+  let html='';
+  for(const id of ids){
+    const v = await chargerVisiteComplete(id);
+    if(v) html += rapportHTML(v);
+  }
   document.getElementById('rapport').innerHTML = html;
   window.print();
 }
+async function chargerVisiteComplete(id){
+  if(sb && navigator.onLine){
+    try{
+      const { data, error } = await sb.from('visites').select('data').eq('id',id).single();
+      if(!error && data) return data.data;
+    }catch(e){}
+  }
+  return cacheLire(id);
+}
 
-/* ================= Exports ================= */
+/* ================= Export PHOTOS (ZIP en dossiers) ================= */
+function zipPret(){
+  if(typeof JSZip==='undefined'){ toast("Module ZIP non chargé — vérifiez la connexion puis rouvrez l'app"); return false; }
+  return true;
+}
+const RUB_TITRE = {}; // id rubrique -> titre (rempli au chargement)
+function indexerRubriques(){ RUBRIQUES.forEach(r=>RUB_TITRE[r.id]=r.titre); }
+function ajouterPhotosAuZip(dossier, v){
+  // dossier = JSZip folder du logement ; v = visite complète
+  let total=0;
+  Object.keys(v.photos||{}).forEach(rid=>{
+    const titre = nomFichier(RUB_TITRE[rid]||rid);
+    (v.photos[rid]||[]).forEach((dataURL,k)=>{
+      const b64 = dataURL.split(',')[1];
+      if(!b64) return;
+      dossier.file(`${titre}_${k+1}.jpg`, b64, {base64:true});
+      total++;
+    });
+  });
+  return total;
+}
+async function exporterPhotosVisite(){
+  if(!zipPret()) return;
+  const v = visite;
+  const zip = new JSZip();
+  const racine = zip.folder(nomFichier(chantierActif?chantierActif.nom:'Chantier'));
+  const dossier = racine.folder(nomFichier(v.rep.adresse||'logement'));
+  const n = ajouterPhotosAuZip(dossier, v);
+  if(!n){ toast("Aucune photo dans cette fiche"); return; }
+  toast("Génération du ZIP…");
+  const blob = await zip.generateAsync({type:'blob'});
+  telechargerBlob(blob, `Photos_${nomFichier(v.rep.adresse||'logement')}.zip`);
+  toast(n+" photo(s) exportée(s) ✓");
+}
+async function exporterPhotosChantier(){
+  if(!zipPret()) return;
+  toast("Chargement des fiches…");
+  const liste = await chargerVisitesChantierCompletes();
+  await zipperLogements(liste, "Photos_"+nomFichier(chantierActif?chantierActif.nom:'chantier'));
+}
+async function exporterPhotosSelection(){
+  if(!zipPret()) return;
+  if(!selection.size){ toast("Sélectionnez au moins une fiche"); return; }
+  toast("Chargement des fiches…");
+  const liste=[];
+  for(const id of selection){ const v=await chargerVisiteComplete(id); if(v) liste.push(v); }
+  await zipperLogements(liste, "Photos_"+nomFichier(chantierActif?chantierActif.nom:'selection'));
+}
+async function zipperLogements(liste, nomZip){
+  const zip = new JSZip();
+  const racine = zip.folder(nomFichier(chantierActif?chantierActif.nom:'Chantier'));
+  const utilises={}; let total=0;
+  liste.forEach(v=>{
+    let nomDossier = nomFichier(v.rep.adresse||'logement');
+    if(utilises[nomDossier]){ utilises[nomDossier]++; nomDossier+='_'+utilises[nomDossier]; }
+    else utilises[nomDossier]=1;
+    const dossier = racine.folder(nomDossier);
+    total += ajouterPhotosAuZip(dossier, v);
+  });
+  if(!total){ toast("Aucune photo à exporter"); return; }
+  toast("Génération du ZIP…");
+  const blob = await zip.generateAsync({type:'blob'});
+  telechargerBlob(blob, nomZip+".zip");
+  toast(total+" photo(s) exportée(s) ✓");
+}
+function telechargerBlob(blob, nom){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download=nom; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+}
+async function chargerVisitesChantierCompletes(){
+  if(sb && navigator.onLine && chantierActif){
+    try{
+      const { data, error } = await sb.from('visites').select('data').eq('chantier_id', chantierActif.id);
+      if(!error) return (data||[]).map(d=>d.data);
+    }catch(e){}
+  }
+  return visites.map(m=>cacheLire(m.id)).filter(Boolean);
+}
+
+/* ================= Exports JSON / Excel (périmètre chantier) ================= */
 function telecharger(nom,contenu){
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([contenu],{type:'application/json'}));
   a.download=nom; a.click();
 }
 async function chargerToutes(){
-  if(sb && navigator.onLine){
-    try{
-      const { data, error } = await sb.from('visites').select('data').order('maj',{ascending:false});
-      if(!error) return (data||[]).map(d=>d.data);
-    }catch(e){}
-  }
-  return visites.map(m=>cacheLire(m.id)).filter(Boolean);
+  return await chargerVisitesChantierCompletes();
 }
-function exporterVisite(){
-  telecharger(`visite_${(visite.rep.adresse||'logement').replace(/[^a-z0-9]/gi,'_')}_${visite.date}.json`, JSON.stringify(visite,null,2));
-  toast("Fiche exportée");
-}
-async function exporterTout(){
-  const tout = await chargerToutes();
-  telecharger(`visites_export_${new Date().toISOString().slice(0,10)}.json`, JSON.stringify(tout,null,2));
-  toast(tout.length+" fiches exportées");
+function exporterChantierJSON(){
+  chargerVisitesChantierCompletes().then(tout=>{
+    telecharger(`${nomFichier(chantierActif?chantierActif.nom:'chantier')}_${new Date().toISOString().slice(0,10)}.json`, JSON.stringify(tout,null,2));
+    toast(tout.length+" fiche(s) exportée(s)");
+  });
 }
 
 /* ================= Export Excel ================= */
@@ -736,7 +1000,7 @@ function exporterExcelVisite(){
   XLSX.writeFile(wb, `Fiche_${nomFichier(v.rep.adresse||'logement')}_${v.date||''}.xlsx`);
   toast("Excel exporté ✓");
 }
-async function exporterToutExcel(){
+async function exporterExcelChantier(){
   if(!xlsxPret()) return;
   const tout = await chargerToutes();
   if(!tout.length){ toast("Aucune fiche à exporter"); return; }
@@ -788,7 +1052,7 @@ async function exporterToutExcel(){
   wsN['!cols']=[{wch:16},{wch:28},{wch:30},{wch:48},{wch:30}];
   XLSX.utils.book_append_sheet(wb, wsN, "Points à traiter");
 
-  XLSX.writeFile(wb, `Synthese_visites_${new Date().toISOString().slice(0,10)}.xlsx`);
+  XLSX.writeFile(wb, `${nomFichier(chantierActif?chantierActif.nom:'chantier')}_synthese.xlsx`);
   toast(tout.length+" fiches exportées en Excel ✓");
 }
 
@@ -802,7 +1066,8 @@ function toast(msg){
   toastTimer=setTimeout(()=>t.classList.remove('visible'),2400);
 }
 
-chargerIndex();
+indexerRubriques();
+chargerChantiers();
 </script>
 </body>
 </html>
