@@ -31,8 +31,20 @@
   #viewer{flex:1;overflow:auto;-webkit-overflow-scrolling:touch;position:relative;touch-action:pan-x pan-y}
   #stage{position:relative;margin:12px auto;transform-origin:0 0;box-shadow:0 2px 16px rgba(0,0,0,.35);background:#fff}
   #stage canvas{position:absolute;left:0;top:0;display:block}
-  #empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;color:#fff;text-align:center;padding:24px}
-  #empty p{max-width:460px;line-height:1.45;margin:0;color:#e6ebf0}
+  #home{position:absolute;inset:0;overflow:auto;padding:20px 16px;color:#fff}
+  #home .wrap{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+  #home h2{margin:0;text-align:center}
+  #home p{line-height:1.45;margin:0;color:#e6ebf0;text-align:center}
+  #plans{display:flex;flex-direction:column;gap:8px}
+  .plan{display:flex;align-items:center;gap:10px;background:#fff;color:#1d2733;border-radius:12px;padding:10px 10px 10px 14px;cursor:pointer}
+  .plan:active{background:#eef2f6}
+  .plan .ic{font-size:26px;line-height:1}
+  .plan .tx{flex:1;min-width:0}
+  .plan .nm{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .plan .mt{font-size:13px;color:#5b6672;margin-top:2px}
+  .plan .del{background:#fdecec;color:#b3261e;width:44px;padding:0;font-size:18px;flex:none}
+  .noplan{background:rgba(255,255,255,.12);border-radius:12px;padding:18px;text-align:center;color:#e6ebf0}
+  .dlg button.danger{background:#b3261e;color:#fff}
   footer{background:var(--panel);border-top:1px solid var(--line);padding:8px;padding-bottom:max(8px,env(safe-area-inset-bottom))}
   #status{font-size:15px;color:#1d2733;min-height:22px;margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   #status b{color:var(--blue)}
@@ -79,7 +91,7 @@
     #btnAdd,#btnUndo{width:40px;padding:0;font-size:18px}
     #status{font-size:14px;margin-bottom:6px}
     #stage{margin:6px auto}
-    #empty h2{font-size:22px}
+    #home h2{font-size:22px}
   }
   .warn{background:#fff6e5;border:1px solid #ffd59a;color:#6b4100;border-radius:10px;padding:10px 12px;font-size:14px;line-height:1.4;margin-bottom:8px}
 </style>
@@ -87,8 +99,8 @@
 <body>
 <div id="app">
   <header>
-    <button class="primary" id="btnOpen"><span class="lg">Ouvrir un plan</span><span class="sm">Ouvrir</span></button>
-    <input type="file" id="file" accept="application/pdf,.pdf" hidden>
+    <button class="primary" id="btnHome" title="Mes plans"><span class="lg">⌂ Mes plans</span><span class="sm">⌂</span></button>
+    <input type="file" id="file" accept="application/pdf,.pdf" multiple hidden>
     <div class="pager" id="pager" hidden>
       <button class="icon" id="prev">‹</button><span id="pageLbl">1 / 1</span><button class="icon" id="next">›</button>
     </div>
@@ -107,14 +119,12 @@
       <canvas id="cv"></canvas>
       <canvas id="ov"></canvas>
     </div>
-    <div id="empty">
-      <h2 style="margin:0">Relevé de cotes au télémètre</h2>
-      <p>Ouvrez un plan PDF, connectez le télémètre, touchez une cote du plan puis déclenchez la mesure : la cote est remplacée par la valeur mesurée.</p>
-      <div class="row" style="justify-content:center">
-        <button class="primary" id="btnOpen2">Ouvrir un plan PDF</button>
-        <button id="btnResume" hidden>Reprendre le dernier plan</button>
-      </div>
-    </div>
+    <div id="home"><div class="wrap">
+      <h2>Relevé de cotes au télémètre</h2>
+      <p>Ajoutez vos plans PDF, ouvrez-en un, connectez le télémètre, touchez une cote puis déclenchez la mesure.</p>
+      <button class="primary" id="btnAdd2">＋ Ajouter des plans PDF</button>
+      <div id="plans"></div>
+    </div></div>
   </div>
 
   <footer>
@@ -185,6 +195,12 @@
   </div>
 </div></dialog>
 
+<dialog id="dlgConfirm"><div class="dlg">
+  <h3>Supprimer ce plan ?</h3>
+  <p class="hint" id="cfBody" style="font-size:15px"></p>
+  <div class="actions"><button data-close>Annuler</button><button class="danger" id="cfYes">Supprimer</button></div>
+</div></dialog>
+
 <dialog id="dlgMsg"><div class="dlg">
   <h3 id="msgTitle"></h3>
   <p class="hint" id="msgBody" style="font-size:15px"></p>
@@ -199,7 +215,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js';
 
 /* ---------- état ---------- */
 const S = {
-  bytes:null, name:'', doc:null, page:null, pageNum:1, numPages:0,
+  planId:null, bytes:null, name:'', doc:null, page:null, pageNum:1, numPages:0,
   zoom:1, fit:1, vp:null, renderScale:1, renderTask:null,
   cotes:{}, mods:[], undo:[], selected:null, pending:null, addMode:false,
   settings:{unit:'auto', recv:'auto', color:'#0a52cc', size:10, uuid:''},
@@ -219,27 +235,102 @@ function hexToRgb(h){ const n = parseInt(h.slice(1),16); return [(n>>16&255)/255
 const DB = {
   open(){ return new Promise((res,rej)=>{ try{ const r = indexedDB.open('releve-telemetre',1); r.onupgradeneeded = ()=> r.result.createObjectStore('kv'); r.onsuccess = ()=> res(r.result); r.onerror = ()=> rej(r.error);}catch(e){rej(e);} }); },
   async put(k,v){ try{ const db = await this.open(); await new Promise((res,rej)=>{ const t = db.transaction('kv','readwrite'); t.objectStore('kv').put(v,k); t.oncomplete=res; t.onerror=()=>rej(t.error); }); }catch(e){ console.warn(e); } },
+  async del(k){ try{ const db = await this.open(); await new Promise((res,rej)=>{ const t = db.transaction('kv','readwrite'); t.objectStore('kv').delete(k); t.oncomplete=res; t.onerror=()=>rej(t.error); }); }catch(e){ console.warn(e); } },
   async get(k){ try{ const db = await this.open(); return await new Promise((res,rej)=>{ const t = db.transaction('kv','readonly'); const r = t.objectStore('kv').get(k); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }catch(e){ return undefined; } },
 };
 let saveTimer = null;
-function saveState(){ clearTimeout(saveTimer); saveTimer = setTimeout(()=> DB.put('mods', {name:S.name, mods:S.mods}), 300); }
+function saveState(){
+  if(!S.planId) return;
+  const id = S.planId, mods = S.mods.slice();
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    await DB.put('mods:' + id, mods);
+    const list = await getPlans(); const pl = list.find(x => x.id === id);
+    if(pl){ pl.nMods = mods.length; pl.updated = Date.now(); await DB.put('plans', list); }
+  }, 300);
+}
+async function getPlans(){ return (await DB.get('plans')) || []; }
 function loadSettings(){ try{ const s = JSON.parse(localStorage.getItem('releve-settings')||'{}'); Object.assign(S.settings, s); }catch(e){} }
 function saveSettings(){ try{ localStorage.setItem('releve-settings', JSON.stringify(S.settings)); }catch(e){} }
 
-/* ---------- ouverture du PDF ---------- */
-$('btnOpen').onclick = $('btnOpen2').onclick = () => $('file').click();
+/* ---------- bibliothèque de plans ---------- */
+$('btnAdd2').onclick = () => $('file').click();
+$('btnHome').onclick = () => showHome();
 $('file').onchange = async e => {
-  const f = e.target.files[0]; if(!f) return;
-  const buf = new Uint8Array(await f.arrayBuffer());
-  await DB.put('pdf', {name:f.name, bytes:buf});
-  await openPdf(buf, f.name, []);
-  saveState();
-  e.target.value = '';
+  const files = Array.from(e.target.files || []); e.target.value = '';
+  if(!files.length) return;
+  const list = await getPlans();
+  let last = null;
+  for(const f of files){
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    const id = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    await DB.put('pdf:' + id, bytes);
+    await DB.put('mods:' + id, []);
+    list.unshift({id, name:f.name, size:bytes.length, added:Date.now(), updated:Date.now(), nMods:0});
+    last = id;
+  }
+  await DB.put('plans', list);
+  if(files.length === 1) await openPlan(last); else renderPlans();
 };
-$('btnResume').onclick = async () => {
-  const p = await DB.get('pdf'); const m = await DB.get('mods');
-  if(p) await openPdf(p.bytes, p.name, (m && m.name === p.name) ? m.mods : []);
+async function showHome(){
+  clearTimeout(saveTimer);
+  if(S.planId){ await DB.put('mods:' + S.planId, S.mods); const l = await getPlans(); const pl = l.find(x => x.id === S.planId); if(pl){ pl.nMods = S.mods.length; await DB.put('plans', l); } }
+  S.planId = null; S.page = null; S.selected = null; S.pending = null; setAddMode(false);
+  if(S.doc){ S.doc.destroy(); S.doc = null; }
+  stage.hidden = true; $('home').hidden = false; $('pager').hidden = true;
+  $('btnExport').disabled = true; $('modCount').textContent = '0';
+  setStatus('<span>Choisissez un plan ou ajoutez-en un.</span>');
+  renderPlans();
+}
+function fmtDate(t){ try{ return new Date(t).toLocaleDateString('fr-FR', {day:'2-digit', month:'2-digit', year:'numeric'}); }catch(e){ return ''; } }
+function fmtSize(n){ return n > 1048576 ? (n/1048576).toFixed(1).replace('.', ',') + ' Mo' : Math.max(1, Math.round(n/1024)) + ' Ko'; }
+async function renderPlans(){
+  const el = $('plans'); const list = await getPlans();
+  el.innerHTML = '';
+  if(!list.length){ el.innerHTML = '<div class="noplan">Aucun plan pour l\'instant. Touchez « ＋ Ajouter des plans PDF ».</div>'; return; }
+  for(const pl of list){
+    const d = document.createElement('div'); d.className = 'plan';
+    d.innerHTML = `<span class="ic">📄</span><div class="tx"><div class="nm"></div><div class="mt">${pl.nMods || 0} cote(s) relevée(s) · ${fmtDate(pl.updated || pl.added)}${pl.size ? ' · ' + fmtSize(pl.size) : ''}</div></div>`;
+    d.querySelector('.nm').textContent = pl.name;
+    const del = document.createElement('button'); del.className = 'del'; del.textContent = '🗑'; del.title = 'Supprimer';
+    del.onclick = ev => { ev.stopPropagation(); askDelete(pl); };
+    d.onclick = () => openPlan(pl.id);
+    d.append(del); el.append(d);
+  }
+}
+let toDelete = null;
+function askDelete(pl){
+  toDelete = pl;
+  $('cfBody').textContent = pl.nMods ? `« ${pl.name} » et ses ${pl.nMods} cote(s) relevée(s) seront supprimés de cet appareil.` : `« ${pl.name} » sera supprimé de cet appareil.`;
+  $('dlgConfirm').showModal();
+}
+$('cfYes').onclick = async () => {
+  $('dlgConfirm').close(); if(!toDelete) return;
+  const id = toDelete.id; toDelete = null;
+  await DB.del('pdf:' + id); await DB.del('mods:' + id);
+  await DB.put('plans', (await getPlans()).filter(x => x.id !== id));
+  renderPlans();
 };
+async function openPlan(id){
+  const list = await getPlans(); const pl = list.find(x => x.id === id);
+  const bytes = await DB.get('pdf:' + id);
+  if(!pl || !bytes){ msg('Plan introuvable', 'Ce plan n\'est plus enregistré sur cet appareil.'); renderPlans(); return; }
+  const mods = (await DB.get('mods:' + id)) || [];
+  S.planId = id;
+  await openPdf(bytes, pl.name, mods);
+}
+async function migrateOld(){
+  const p = await DB.get('pdf'); if(!p || !p.bytes) return;
+  const m = await DB.get('mods');
+  const id = 'p' + Date.now().toString(36);
+  await DB.put('pdf:' + id, p.bytes);
+  const mods = (m && m.name === p.name) ? (m.mods || []) : [];
+  await DB.put('mods:' + id, mods);
+  const list = await getPlans();
+  list.unshift({id, name:p.name, size:p.bytes.length, added:Date.now(), updated:Date.now(), nMods:mods.length});
+  await DB.put('plans', list);
+  await DB.del('pdf'); await DB.del('mods');
+}
 
 async function openPdf(bytes, name, mods){
   try{
@@ -247,12 +338,12 @@ async function openPdf(bytes, name, mods){
     if(S.doc) S.doc.destroy();
     S.doc = await pdfjsLib.getDocument({data: bytes.slice(), standardFontDataUrl:'vendor/standard_fonts/'}).promise;
     S.numPages = S.doc.numPages; S.pageNum = 1; S.zoom = 1;
-    $('empty').hidden = true; stage.hidden = false;
+    $('home').hidden = true; stage.hidden = false;
     $('pager').hidden = S.numPages < 2;
     $('btnExport').disabled = false;
     await showPage(1);
     updateCount();
-  }catch(err){ console.error(err); msg('Ouverture impossible', 'Le fichier n\'a pas pu être lu comme un PDF.<br>' + err.message); }
+  }catch(err){ console.error(err); S.planId = null; msg('Ouverture impossible', 'Le fichier n\'a pas pu être lu comme un PDF.<br>' + (err.message || err)); }
 }
 
 /* ---------- affichage ---------- */
@@ -761,8 +852,8 @@ function deliver(m, src){
 (async function init(){
   loadSettings();
   if(!navigator.bluetooth) $('noBT').hidden = false;
-  const p = await DB.get('pdf');
-  if(p && p.bytes){ $('btnResume').hidden = false; $('btnResume').textContent = 'Reprendre « ' + p.name + ' »'; }
+  await migrateOld();
+  await renderPlans();
   if('serviceWorker' in navigator){ try{ navigator.serviceWorker.register('sw.js'); }catch(e){} }
 })();
 </script>
