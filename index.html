@@ -45,6 +45,27 @@ main{padding:14px;max-width:760px;margin:0 auto}
 
 /* Aperçu image à la création */
 .apercu-img{width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:8px;border:1px solid var(--ligne);margin-top:8px;background:#E9E7DF;display:none}
+.chantier-card.nc .vignette.placeholder{background:#EEF2F6;color:#8AA0B4}
+
+/* Recherche / tri */
+.barre-outils{display:flex;gap:8px;margin-bottom:12px}
+.barre-outils input{flex:1}
+.barre-outils select{width:auto;flex-shrink:0;padding-right:28px}
+
+/* Ligne chantier dans le sommaire (réaffectation) */
+.chantier-ligne{background:var(--carte);border:1px solid var(--ligne);border-radius:var(--r);padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px}
+.chantier-ligne .lbl{flex:1;font-size:12.5px;color:var(--gris)}
+.chantier-ligne .lbl b{display:block;font-size:14px;color:var(--encre)}
+.chantier-ligne button{background:#fff;border:1.5px solid var(--bleu);color:var(--bleu);font-weight:700;font-size:12.5px;border-radius:7px;padding:7px 11px;width:auto}
+
+/* Feuille de sélection (overlay bas) */
+.overlay{position:fixed;inset:0;background:rgba(18,41,65,.55);z-index:200;display:none;align-items:flex-end;justify-content:center}
+.overlay.actif{display:flex}
+.overlay .feuille{background:var(--papier);width:100%;max-width:560px;max-height:80vh;overflow:auto;border-radius:16px 16px 0 0;padding:16px}
+.overlay h3{font-size:15px;margin-bottom:12px}
+.overlay .opt{background:var(--carte);border:1px solid var(--ligne);border-radius:9px;padding:11px 13px;margin-bottom:8px;width:100%;text-align:left;font-weight:600;display:flex;align-items:center;gap:10px}
+.overlay .opt.actif{border-color:var(--vert);background:#F2F9F4}
+.overlay .opt .vmini{width:34px;height:34px;border-radius:6px;object-fit:cover;background:#E9E7DF;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:17px;color:#B5B1A6}
 
 /* Liste des visites */
 .visite-card{background:var(--carte);border:1px solid var(--ligne);border-left:5px solid var(--bleu);border-radius:var(--r);padding:13px 14px;margin-bottom:11px;display:block;width:100%;text-align:left;box-shadow:0 1px 3px rgba(30,37,48,.06);position:relative}
@@ -119,8 +140,12 @@ body.mode-select .barre-select{display:flex}
   body{background:#fff;padding:0;font-size:11.5px}
   body>*{display:none!important}
   #rapport{display:block!important}
-  #rapport .rp-tete{border-bottom:3px solid var(--bleu);padding-bottom:8px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:flex-end}
-  #rapport h1{font-size:18px;color:var(--bleu)}
+  #rapport .rp-marque{display:flex;align-items:center;gap:12px;border-bottom:3px solid var(--bleu);padding-bottom:7px;margin-bottom:9px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  #rapport .rp-logo{width:42px;height:42px;border-radius:8px;background:var(--bleu);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;letter-spacing:1px;flex-shrink:0}
+  #rapport .rp-marque .cab{font-weight:800;font-size:15px;color:var(--bleu);line-height:1.15}
+  #rapport .rp-marque .cab small{display:block;font-weight:600;font-size:9.5px;color:#666;letter-spacing:.04em;text-transform:uppercase}
+  #rapport .rp-tete{padding-bottom:8px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:flex-end}
+  #rapport h1{font-size:16px;color:var(--bleu)}
   #rapport .rp-rub{margin-bottom:12px;break-inside:avoid}
   #rapport .rp-rub h3{background:var(--bleu);color:#fff;padding:4px 9px;font-size:12.5px;border-radius:4px;margin-bottom:5px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   #rapport table{width:100%;border-collapse:collapse;font-size:11px}
@@ -170,6 +195,15 @@ body.mode-select .barre-select{display:flex}
       <button class="ghost" onclick="toutSelectionner()">Tout</button>
       <button class="ghost" onclick="quitterSelection()">✕</button>
     </div>
+    <div class="barre-outils" id="barreOutils" style="display:none">
+      <input id="rechFiche" placeholder="Rechercher une adresse…" oninput="afficherListe()">
+      <select id="triFiche" onchange="afficherListe()">
+        <option value="maj">Récentes</option>
+        <option value="adresse">Adresse A→Z</option>
+        <option value="pct_bas">Moins complétées</option>
+        <option value="pct_haut">Plus complétées</option>
+      </select>
+    </div>
     <div id="listeVisites"></div>
     <div class="vide" id="videListe" style="display:none">
       <div class="pic">🏠</div>
@@ -186,6 +220,10 @@ body.mode-select .barre-select{display:flex}
   </section>
 
   <section class="ecran" id="ecranSommaire">
+    <div class="chantier-ligne" id="ligneChantier">
+      <span class="lbl">Chantier<b id="nomChantierFiche">—</b></span>
+      <button onclick="ouvrirSelecteurChantier()">Changer</button>
+    </div>
     <div id="sommaire"></div>
     <div class="rangée-btn">
       <button class="btn principal" onclick="genererRapport()">🖨️ Éditer le rapport</button>
@@ -212,6 +250,15 @@ body.mode-select .barre-select{display:flex}
 <div class="toast" id="toast"></div>
 <input type="file" accept="image/*" capture="environment" id="inputPhoto" style="display:none">
 <input type="file" accept="image/*" id="inputChantierImg" style="display:none">
+
+<!-- Feuille de sélection d'un chantier (réaffectation) -->
+<div class="overlay" id="overlayChantier" onclick="if(event.target===this)fermerSelecteurChantier()">
+  <div class="feuille">
+    <h3>Déplacer cette fiche vers…</h3>
+    <div id="listeSelecteur"></div>
+  </div>
+</div>
+
 <div id="rapport"></div>
 
 <script>
@@ -465,6 +512,8 @@ async function pousserChantier(c){
     return !error;
   }catch(e){ return false; }
 }
+const NC_ID = '__nc__'; // chantier virtuel « Non classées »
+let nbNonClasses = 0;
 async function chargerChantiers(){
   if(!sb){ chantiers=[]; afficherChantiers(); afficherConfigManquante(); majStatut(); return; }
   try{
@@ -477,20 +526,28 @@ async function chargerChantiers(){
     try{ chantiers = JSON.parse(localStorage.getItem('fv-chantiers')||'[]'); }catch(_){ chantiers=[]; }
   }
   try{ localStorage.setItem('fv-chantiers', JSON.stringify(chantiers)); }catch(e){}
+  // Fiches sans chantier (anciennes fiches à reclasser)
+  nbNonClasses = 0;
+  if(sb && navigator.onLine){
+    try{
+      const { count } = await sb.from('visites').select('id',{count:'exact',head:true}).is('chantier_id', null);
+      nbNonClasses = count||0;
+    }catch(e){}
+  }
   afficherChantiers(); majStatut(); synchroniser();
 }
 async function chargerVisitesChantier(cid){
   if(!sb){ visites=[]; afficherListe(); majStatut(); return; }
   try{
-    const { data, error } = await sb.from('visites')
-      .select('id, ville, adresse, date_visite, pct, maj, chantier_id')
-      .eq('chantier_id', cid)
-      .order('maj', {ascending:false});
+    let q = sb.from('visites').select('id, ville, adresse, date_visite, pct, maj, chantier_id');
+    q = (cid===NC_ID) ? q.is('chantier_id', null) : q.eq('chantier_id', cid);
+    const { data, error } = await q.order('maj', {ascending:false});
     if(error) throw error;
     visites = (data||[]).map(d=>({id:d.id, ville:d.ville, adresse:d.adresse, date:d.date_visite, pct:d.pct, maj:d.maj}));
   }catch(e){
     toast("Connexion à la base impossible — mode hors ligne");
-    visites = pendingLire().map(id=>cacheLire(id)).filter(v=>v&&v.chantier_id===cid)
+    visites = pendingLire().map(id=>cacheLire(id))
+      .filter(v=> v && (cid===NC_ID ? !v.chantier_id : v.chantier_id===cid))
       .map(v=>({id:v.id, ville:v.rep.ville||'', adresse:v.rep.adresse||'', date:v.date, pct:pctRempli(v), maj:v.maj}));
   }
   afficherListe(); majStatut(); synchroniser();
@@ -541,7 +598,8 @@ function montrer(id){
     fab.style.display='flex'; fab.textContent='＋ Nouveau chantier';
     document.getElementById('topTitre').textContent='Chantiers';
   } else if(id==='ecranListe'){
-    fab.style.display='flex'; fab.textContent='＋ Nouvelle fiche';
+    const nc = chantierActif && chantierActif.id===NC_ID;
+    fab.style.display = nc?'none':'flex'; fab.textContent='＋ Nouvelle fiche';
     document.getElementById('topTitre').textContent = chantierActif? chantierActif.nom : 'Fiches de visite';
   } else {
     fab.style.display='none';
@@ -563,14 +621,22 @@ function retour(){
 /* ================= Écran CHANTIERS ================= */
 function afficherChantiers(){
   const cont = document.getElementById('grilleChantiers');
-  document.getElementById('videChantiers').style.display = chantiers.length?'none':'block';
-  cont.innerHTML = chantiers.map(c=>`
+  document.getElementById('videChantiers').style.display = (chantiers.length||nbNonClasses)?'none':'block';
+  let html = chantiers.map(c=>`
     <button class="chantier-card" onclick="ouvrirChantier('${c.id}')">
       ${c.image
         ? `<img class="vignette" src="${c.image}">`
         : `<div class="vignette placeholder">🏗️</div>`}
       <div class="nom">${esc(c.nom)||'Sans nom'}</div>
     </button>`).join('');
+  if(nbNonClasses>0){
+    html += `<button class="chantier-card nc" onclick="ouvrirChantier('${NC_ID}')">
+      <div class="vignette placeholder">📂</div>
+      <div class="nom">Non classées</div>
+      <div class="sub">${nbNonClasses} fiche(s) à reclasser</div>
+    </button>`;
+  }
+  cont.innerHTML = html;
 }
 let nouvImage = '';
 function nouveauChantier(){
@@ -607,19 +673,36 @@ function filerChantier(c){
   if(!pc.find(x=>x.id===c.id)){ pc.push(c); localStorage.setItem('fv-pending-chantiers', JSON.stringify(pc)); }
 }
 function ouvrirChantier(id){
-  chantierActif = chantiers.find(c=>c.id===id) || {id, nom:'Chantier'};
+  if(id===NC_ID) chantierActif = {id:NC_ID, nom:'Non classées'};
+  else chantierActif = chantiers.find(c=>c.id===id) || {id, nom:'Chantier'};
   quitterSelection();
   chargerVisitesChantier(id);
   montrer('ecranListe');
 }
 
 /* ================= Liste des fiches ================= */
+function vueFiches(){
+  const q = (document.getElementById('rechFiche')?.value||'').trim().toLowerCase();
+  const tri = document.getElementById('triFiche')?.value||'maj';
+  let vue = visites.slice();
+  if(q) vue = vue.filter(v=> (v.adresse||'').toLowerCase().includes(q) || (v.ville||'').toLowerCase().includes(q));
+  vue.sort((a,b)=>{
+    if(tri==='adresse') return (a.adresse||'').localeCompare(b.adresse||'');
+    if(tri==='pct_bas') return (a.pct||0)-(b.pct||0);
+    if(tri==='pct_haut') return (b.pct||0)-(a.pct||0);
+    return (b.maj||0)-(a.maj||0);
+  });
+  return vue;
+}
 function afficherListe(){
   const cont = document.getElementById('listeVisites');
-  document.getElementById('videListe').style.display = visites.length?'none':'block';
-  document.getElementById('outilsListe').style.display = visites.length?'flex':'none';
-  document.getElementById('outilsListe2').style.display = visites.length?'flex':'none';
-  cont.innerHTML = visites.map(v=>`
+  const aucune = visites.length===0;
+  document.getElementById('videListe').style.display = aucune?'block':'none';
+  document.getElementById('outilsListe').style.display = aucune?'none':'flex';
+  document.getElementById('outilsListe2').style.display = aucune?'none':'flex';
+  document.getElementById('barreOutils').style.display = (visites.length>3 && !modeSelection)?'flex':'none';
+  const vue = vueFiches();
+  cont.innerHTML = vue.map(v=>`
     <button class="visite-card ${selection.has(v.id)?'coché':''}" onclick="cliquerFiche('${v.id}')">
       <div class="coche">${selection.has(v.id)?'✓':''}</div>
       <div class="adr">${esc(v.adresse)||'Adresse non renseignée'}</div>
@@ -629,7 +712,7 @@ function afficherListe(){
       </div>
       <div class="jauge"><i style="width:${v.pct||0}%"></i></div>
       <div class="pct">${v.pct||0} % complété</div>
-    </button>`).join('');
+    </button>`).join('') || `<p style="text-align:center;color:var(--gris);padding:20px;font-size:13px">Aucune fiche ne correspond.</p>`;
   majBarreSelection();
 }
 function cliquerFiche(id){
@@ -643,8 +726,9 @@ function cliquerFiche(id){
 function activerSelection(){ modeSelection=true; document.body.classList.add('mode-select'); afficherListe(); }
 function quitterSelection(){ modeSelection=false; selection.clear(); document.body.classList.remove('mode-select'); if(document.getElementById('listeVisites')) afficherListe(); }
 function toutSelectionner(){
-  if(selection.size===visites.length) selection.clear();
-  else visites.forEach(v=>selection.add(v.id));
+  const vue = vueFiches();
+  if(vue.every(v=>selection.has(v.id))) vue.forEach(v=>selection.delete(v.id));
+  else vue.forEach(v=>selection.add(v.id));
   afficherListe();
 }
 function majBarreSelection(){
@@ -652,9 +736,10 @@ function majBarreSelection(){
   if(el) el.textContent = selection.size+' sélectionnée'+(selection.size>1?'s':'');
 }
 function nouvelleVisite(){
-  visite = { id:'v'+Date.now().toString(36), chantier_id:chantierActif?chantierActif.id:null,
+  const cid = (chantierActif && chantierActif.id!==NC_ID) ? chantierActif.id : null;
+  visite = { id:'v'+Date.now().toString(36), chantier_id:cid,
     date:new Date().toISOString().slice(0,10), rep:{}, notes:{}, photos:{}, maj:Date.now() };
-  if(chantierActif && chantierActif.nom) visite.rep.ville = chantierActif.nom;
+  if(cid && chantierActif.nom) visite.rep.ville = chantierActif.nom;
   afficherSommaire(); montrer('ecranSommaire'); sauverVisite();
 }
 async function ouvrirVisite(id){
@@ -667,7 +752,6 @@ async function ouvrirVisite(id){
   }
   if(!v){ toast("Fiche introuvable (hors ligne ?)"); return; }
   visite = v;
-  if(!visite.chantier_id && chantierActif) visite.chantier_id = chantierActif.id;
   afficherSommaire(); montrer('ecranSommaire');
 }
 async function supprimerVisite(){
@@ -682,8 +766,15 @@ async function supprimerVisite(){
 }
 
 /* ================= Sommaire ================= */
+function nomDeChantier(cid){
+  if(!cid) return 'Non classée';
+  const c = chantiers.find(x=>x.id===cid);
+  return c? (c.nom||'Sans nom') : 'Chantier inconnu';
+}
 function afficherSommaire(){
   document.getElementById('topTitre').textContent = (visite.rep.adresse||'Nouvelle visite') + (visite.rep.ville?' — '+visite.rep.ville:'');
+  const nomEl = document.getElementById('nomChantierFiche');
+  if(nomEl) nomEl.textContent = nomDeChantier(visite.chantier_id);
   document.getElementById('sommaire').innerHTML = RUBRIQUES.map((r,i)=>{
     const champs = r.champs.filter(c=>c.type!=='st');
     const faits = champs.filter(c=>{const v=visite.rep[c.id];return v!==undefined&&v!==''&&!(Array.isArray(v)&&!v.length)}).length;
@@ -695,6 +786,29 @@ function afficherSommaire(){
       <span class="fleche">›</span>
     </button>`;
   }).join('');
+}
+
+/* ================= Réaffectation à un chantier ================= */
+function ouvrirSelecteurChantier(){
+  const cont = document.getElementById('listeSelecteur');
+  const actuel = visite.chantier_id||null;
+  let html = chantiers.map(c=>`
+    <button class="opt ${actuel===c.id?'actif':''}" onclick="reaffecter('${c.id}')">
+      ${c.image? `<img class="vmini" src="${c.image}">` : `<span class="vmini">🏗️</span>`}
+      <span>${esc(c.nom)||'Sans nom'}</span>
+    </button>`).join('');
+  html += `<button class="opt ${!actuel?'actif':''}" onclick="reaffecter('')">
+      <span class="vmini">📂</span><span>Non classée</span></button>`;
+  cont.innerHTML = html;
+  document.getElementById('overlayChantier').classList.add('actif');
+}
+function fermerSelecteurChantier(){ document.getElementById('overlayChantier').classList.remove('actif'); }
+async function reaffecter(cid){
+  visite.chantier_id = cid || null;
+  fermerSelecteurChantier();
+  document.getElementById('nomChantierFiche').textContent = nomDeChantier(visite.chantier_id);
+  await sauverVisite();
+  toast("Fiche déplacée vers « "+nomDeChantier(visite.chantier_id)+" »");
 }
 
 /* ================= Rubrique ================= */
@@ -803,7 +917,12 @@ function compresser(file,maxDim,q){
 /* ================= Rapport ================= */
 const NEGATIFS = ["A remplacer","À remplacer","Hors service","Vétuste","Besoin mise en sécurité","Mauvais état","Fissure existante","Flambement apparent","Défaillants","HS / pile absente"];
 function rapportHTML(v){
-  let html = `<div class="rp-fiche"><div class="rp-tete">
+  let html = `<div class="rp-fiche">
+  <div class="rp-marque">
+    <div class="rp-logo">CD</div>
+    <div class="cab">Cabinet Cochet Dehaene<small>Maîtrise d'œuvre · Diagnostic logement</small></div>
+  </div>
+  <div class="rp-tete">
     <div><h1>Fiche de visite — Diagnostic logement</h1>
     <div style="font-size:12px;color:#555">${esc(v.rep.adresse)||''} ${v.rep.ville?'— '+esc(v.rep.ville):''} ${v.rep.ug?'· UG '+esc(v.rep.ug):''}</div></div>
     <div style="font-size:11px;text-align:right">Visite du ${v.date? new Date(v.date+'T12:00').toLocaleDateString('fr-FR'):'—'}<br>Édité le ${new Date().toLocaleDateString('fr-FR')}</div>
