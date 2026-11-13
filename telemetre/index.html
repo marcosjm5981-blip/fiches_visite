@@ -623,26 +623,47 @@ $('btnCopyLog').onclick = async () => { try{ await navigator.clipboard.writeText
 /* ---------- Bluetooth ---------- */
 const BT = {device:null, log:[], bufs:{}, timers:{}, last:{v:null, t:0}};
 function blog(s){ const t = new Date().toLocaleTimeString('fr-FR'); BT.log.push(t + '  ' + s); if(BT.log.length > 600) BT.log.shift(); }
+const full = n => typeof n === 'number' ? '0000' + n.toString(16).padStart(4, '0') + '-0000-1000-8000-00805f9b34fb' : n;
+const SVC_SHORT = [0xffe0, 0xfff0, 0xffb0, 0xffc0, 0xffd0, 0xff00, 0xff10, 0xff12, 0xffa0, 0xfee7, 0xae00, 0xae30, 0x18f0, 0x180a, 0x180f,
+  '6e400001-b5a3-f393-e0a9-e50e24dcca9e', '49535343-fe7d-4ae5-8fa9-9fafd205e455', '3ab10100-f831-4395-b29d-570977d5bf94',
+  '02a6c0d0-0451-4000-b000-fb3210111989', '0783b03e-8535-b5a0-7140-a304d2495cb7', 'e7810a71-73ae-499d-8c15-faa9aef0c3f2'];
+function customSvc(){
+  const u = (S.settings.uuid || '').trim().toLowerCase();
+  if(!u) return [];
+  if(/^(0x)?[0-9a-f]{4}$/.test(u)) return [full(parseInt(u.replace('0x', ''), 16))];
+  return [u];
+}
 function svcList(){
   const l = [];
   for(let i = 0xff00; i <= 0xfffc; i++) l.push(i);
   for(let i = 0xfe00; i <= 0xfe3f; i++) l.push(i);
   for(let i = 0xae00; i <= 0xae3f; i++) l.push(i);
   for(let i = 0x18f0; i <= 0x18ff; i++) l.push(i);
-  l.push(0x180a, 0x180f, 0x1800, 0x1801, 0xfee7, 0xfeba, 0xfef5);
-  l.push(
-    '6e400001-b5a3-f393-e0a9-e50e24dcca9e', /* Nordic UART */
-    '49535343-fe7d-4ae5-8fa9-9fafd205e455', /* Microchip transparent UART */
-    '0000fff0-0000-1000-8000-00805f9b34fb',
-    '3ab10100-f831-4395-b29d-570977d5bf94', /* Leica DISTO */
-    '02a6c0d0-0451-4000-b000-fb3210111989', /* Bosch GLM */
-    '0783b03e-8535-b5a0-7140-a304d2495cb7', /* Telit/Stollmann serial */
-    'e7810a71-73ae-499d-8c15-faa9aef0c3f2',
-    '0000ae30-0000-1000-8000-00805f9b34fb',
-  );
-  const u = (S.settings.uuid || '').trim().toLowerCase();
-  if(u){ if(/^[0-9a-f]{4}$/.test(u)) l.push(parseInt(u, 16)); else if(/^0x[0-9a-f]{4}$/.test(u)) l.push(parseInt(u, 16)); else l.push(u); }
-  return l;
+  l.push(0x180a, 0x180f);
+  return [...new Set([...SVC_SHORT, ...l].map(full).concat(customSvc()))];
+}
+function errText(e){
+  if(!e) return 'erreur inconnue';
+  if(typeof e === 'string') return e;
+  const t = [e.name, e.message].filter(Boolean).join(' : ');
+  if(t) return t;
+  try{ return JSON.stringify(e) || String(e); }catch(x){ return String(e); }
+}
+async function pickDevice(){
+  const tries = [
+    ['liste complète', () => ({acceptAllDevices:true, optionalServices: svcList()})],
+    ['liste courte', () => ({acceptAllDevices:true, optionalServices: [...new Set(SVC_SHORT.map(full).concat(customSvc()))]})],
+    ['sans liste', () => ({acceptAllDevices:true})],
+  ];
+  let lastErr = null;
+  for(const [label, opts] of tries){
+    try{ blog('Recherche (' + label + ')…'); return await navigator.bluetooth.requestDevice(opts()); }
+    catch(e){
+      lastErr = e; blog('  refus : ' + errText(e));
+      if(e && (e.name === 'NotFoundError' || /cancel|annul/i.test(errText(e)))) throw e;
+    }
+  }
+  throw lastErr;
 }
 function setBT(state, label){ $('btDot').className = 'dot' + (state === 'on' ? ' on' : state === 'busy' ? ' busy' : ''); $('btLbl').textContent = label; }
 $('btnBT').onclick = async () => {
@@ -652,7 +673,7 @@ $('btnBT').onclick = async () => {
     setBT('busy', 'Recherche…');
     let device = BT.device;
     if(!device){
-      device = await navigator.bluetooth.requestDevice({acceptAllDevices:true, optionalServices: svcList()});
+      device = await pickDevice();
       device.addEventListener('gattserverdisconnected', () => { setBT('off', 'Déconnecté'); blog('Déconnecté'); });
       BT.device = device;
     }
@@ -679,10 +700,12 @@ $('btnBT').onclick = async () => {
     if(!nNotify){ setBT('busy', 'Connecté (aucun canal)'); msg('Connecté, mais aucun canal de mesure', 'Le télémètre est connecté mais n\'expose aucun canal de notification reconnu. Ouvrez Réglages › Journal Bluetooth et transmettez son contenu.'); }
     else setBT('on', device.name || 'Connecté');
   }catch(err){
-    blog('Erreur : ' + err.message);
-    if(err.name === 'NotFoundError'){ setBT('off', 'Télémètre'); return; }
+    const et = errText(err);
+    blog('Erreur : ' + et);
     setBT('off', 'Télémètre');
-    msg('Connexion impossible', err.message + '<br><br>Vérifiez que le Bluetooth du télémètre est activé et qu\'il n\'est pas déjà connecté à une autre application.');
+    if(err && err.name === 'NotFoundError') return;
+    BT.device = null;
+    msg('Connexion impossible', et + '<br><br>Vérifiez :<br>• que le Bluetooth de l\'iPhone est activé et autorisé pour Bluefy (Réglages iOS › Bluefy › Bluetooth) ;<br>• que le Bluetooth du télémètre est activé ;<br>• qu\'il n\'est pas connecté à l\'app Mileseey ou à un autre appareil.<br><br>Si le problème continue : ⚙ › Journal Bluetooth › Copier, puis envoyez-moi le journal.');
   }
 };
 
