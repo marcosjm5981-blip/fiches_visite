@@ -63,24 +63,42 @@
   .list .it button{height:34px;padding:0 10px}
   pre#log{background:#0f151b;color:#b8f5c8;font-size:12px;max-height:46vh;overflow:auto;padding:10px;border-radius:8px;white-space:pre-wrap;word-break:break-all;margin:0}
   .hint{font-size:13px;color:#5b6672;line-height:1.4}
+  .sm{display:none}
+  #btLbl{max-width:150px;overflow:hidden;text-overflow:ellipsis}
+  @media (max-width:640px){
+    .lg,.zb{display:none}
+    .sm{display:inline}
+    header{flex-wrap:nowrap;gap:6px;padding:6px;overflow-x:auto}
+    header .grow{display:none}
+    button{height:40px;padding:0 10px;font-size:15px}
+    button.icon{width:40px}
+    #btnBT{flex:1;min-width:0;justify-content:center}
+    #btLbl{max-width:100%}
+    footer .row{flex-wrap:nowrap;gap:6px}
+    .row input[type=text]{min-width:0;height:40px;font-size:16px}
+    #btnAdd,#btnUndo{width:40px;padding:0;font-size:18px}
+    #status{font-size:14px;margin-bottom:6px}
+    #stage{margin:6px auto}
+    #empty h2{font-size:22px}
+  }
   .warn{background:#fff6e5;border:1px solid #ffd59a;color:#6b4100;border-radius:10px;padding:10px 12px;font-size:14px;line-height:1.4;margin-bottom:8px}
 </style>
 </head>
 <body>
 <div id="app">
   <header>
-    <button class="primary" id="btnOpen">Ouvrir un plan</button>
+    <button class="primary" id="btnOpen"><span class="lg">Ouvrir un plan</span><span class="sm">Ouvrir</span></button>
     <input type="file" id="file" accept="application/pdf,.pdf" hidden>
     <div class="pager" id="pager" hidden>
       <button class="icon" id="prev">‹</button><span id="pageLbl">1 / 1</span><button class="icon" id="next">›</button>
     </div>
-    <button class="icon" id="zoomOut" title="Zoom -">−</button>
-    <button class="icon" id="zoomFit" title="Ajuster">⤢</button>
-    <button class="icon" id="zoomIn" title="Zoom +">+</button>
+    <button class="icon zb" id="zoomOut" title="Zoom -">−</button>
+    <button class="icon zb" id="zoomFit" title="Ajuster">⤢</button>
+    <button class="icon zb" id="zoomIn" title="Zoom +">+</button>
     <div class="grow"></div>
     <button id="btnBT" class="btstate"><span class="dot" id="btDot"></span><span id="btLbl">Télémètre</span></button>
-    <button id="btnList">Relevés <span id="modCount">0</span></button>
-    <button id="btnExport" class="primary" disabled>Exporter le PDF</button>
+    <button id="btnList"><span class="lg">Relevés </span><span class="sm">≡ </span><span id="modCount">0</span></button>
+    <button id="btnExport" class="primary" disabled><span class="lg">Exporter le PDF</span><span class="sm">Exporter</span></button>
     <button class="icon" id="btnSettings" title="Réglages">⚙</button>
   </header>
 
@@ -103,10 +121,10 @@
     <div id="noBT" class="warn" hidden>Le Bluetooth n'est pas disponible dans ce navigateur. Sur iPad / iPhone, ouvrez cette page dans l'application gratuite <b>Bluefy – Web BLE Browser</b> (App Store). Sur Android ou PC : Chrome ou Edge.</div>
     <div id="status"><span>Ouvrez un plan PDF pour commencer.</span></div>
     <div class="row">
-      <button id="btnAdd" title="Ajouter une cote là où le plan n'a pas de texte">＋ Cote libre</button>
-      <input type="text" id="manual" inputmode="decimal" placeholder="Mesure manuelle (m) — ex. 3,452" autocomplete="off">
-      <button id="btnManual">Appliquer</button>
-      <button id="btnUndo">Annuler</button>
+      <button id="btnAdd" title="Ajouter une cote là où le plan n'a pas de texte">＋<span class="lg"> Cote libre</span></button>
+      <input type="text" id="manual" inputmode="decimal" placeholder="Mesure (m) ex. 3,452" autocomplete="off">
+      <button id="btnManual"><span class="lg">Appliquer</span><span class="sm">OK</span></button>
+      <button id="btnUndo" title="Annuler"><span class="lg">Annuler</span><span class="sm">↶</span></button>
     </div>
   </footer>
 </div>
@@ -244,7 +262,7 @@ async function showPage(n){
   S.page = await S.doc.getPage(n);
   if(!S.cotes[n]) S.cotes[n] = await extractCotes(S.page, n);
   const base = S.page.getViewport({scale:1});
-  S.fit = Math.max(0.05, (viewer.clientWidth - 24) / base.width);
+  S.fit = Math.max(0.05, (viewer.clientWidth - (viewer.clientWidth < 640 ? 12 : 24)) / base.width);
   await render();
   const nb = S.cotes[n].length;
   setStatus(nb ? `<span>${nb} cote(s) détectée(s) sur la page. Touchez une cote, puis mesurez.</span>`
@@ -542,13 +560,13 @@ viewer.addEventListener('touchend', e => {
 viewer.addEventListener('wheel', e => { if(e.ctrlKey && S.page){ e.preventDefault(); const r = viewer.getBoundingClientRect(); setZoom(S.zoom * (e.deltaY < 0 ? 1.15 : 1/1.15), e.clientX - r.left, e.clientY - r.top); } }, {passive:false});
 $('prev').onclick = () => S.pageNum > 1 && showPage(S.pageNum - 1);
 $('next').onclick = () => S.pageNum < S.numPages && showPage(S.pageNum + 1);
-let rzT; window.addEventListener('resize', () => { clearTimeout(rzT); rzT = setTimeout(() => { if(S.page){ const b = S.page.getViewport({scale:1}); S.fit = Math.max(0.05, (viewer.clientWidth - 24) / b.width); render(); } }, 250); });
+let rzT; window.addEventListener('resize', () => { clearTimeout(rzT); rzT = setTimeout(() => { if(S.page){ const b = S.page.getViewport({scale:1}); S.fit = Math.max(0.05, (viewer.clientWidth - (viewer.clientWidth < 640 ? 12 : 24)) / b.width); render(); } }, 250); });
 
 /* ---------- export PDF ---------- */
 let exported = null;
 $('btnExport').onclick = async () => {
   if(!S.bytes) return;
-  $('btnExport').disabled = true; $('btnExport').textContent = 'Création…';
+  $('btnExport').disabled = true; $('btnExport').dataset.h = $('btnExport').innerHTML; $('btnExport').textContent = 'Création…';
   try{
     const {PDFDocument, StandardFonts, rgb, degrees} = PDFLib;
     const doc = await PDFDocument.load(S.bytes.slice(), {ignoreEncryption:true});
@@ -571,7 +589,7 @@ $('btnExport').onclick = async () => {
     $('expInfo').textContent = `${fname} — ${S.mods.length} cote(s) mise(s) à jour.`;
     $('dlgExport').showModal();
   }catch(err){ console.error(err); msg('Export impossible', err.message); }
-  finally{ $('btnExport').disabled = false; $('btnExport').textContent = 'Exporter le PDF'; }
+  finally{ $('btnExport').disabled = false; $('btnExport').innerHTML = $('btnExport').dataset.h; }
 };
 function exportBlob(){ return new Blob([exported.bytes], {type:'application/pdf'}); }
 $('btnShare').onclick = async () => {
